@@ -1,0 +1,64 @@
+import argparse, numpy as np, pandas as pd, torch, faiss
+from pathlib import Path
+from tqdm import tqdm
+import open_clip
+
+from utils import load_faiss, from_parquet
+import config
+
+def encode_text(model, tokenizer, device, text: str):
+    tok = tokenizer([text]).to(device)
+    with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16 if device.type=='cuda' else torch.bfloat16):
+        t = model.encode_text(tok)
+    t = t.float().cpu().numpy()
+    # normalize
+    t = t / (np.linalg.norm(t, axis=1, keepdims=True) + 1e-12)
+    return t
+
+def dedup_temporal(df, radius=1):
+    # Deduplicate neighbors: keep the highest score within same video around nearby n
+    kept = []
+    last = {}
+    for _, row in df.iterrows():
+        key = row["video_id"]
+        n = row["n"]
+        if key in last and abs(n - last[key]) <= radius:
+            # already placed a neighbor nearby
+            continue
+        kept.append(row)
+        last[key] = n
+    return pd.DataFrame(kept)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--index_dir", type=Path, default=config.ARTIFACT_DIR)
+    ap.add_argument("--query", type=str, required=True)
+    ap.add_argument("--topk", type=int, default=100)
+    ap.add_argument("--dedup_radius", type=int, default=1, help="suppress close-by keyframes in the same video")
+    args = ap.parse_args()
+
+    index = load_faiss(args.index_dir / "index.faiss")
+    mapping = from_parquet(args.index_dir / "mapping.parquet")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, _, _ = open_clip.create_model_and_transforms(config.MODEL_NAME, pretrained=config.MODEL_PRETRAINED, device=device)
+    tokenizer = open_clip.get_tokenizer(config.MODEL_NAME)
+
+    qv = encode_text(model, tokenizer, device, args.query)
+    D, I = index.search(qv, args.topk * 3)  # over-fetch for dedup
+    I = I[0]; D = D[0]
+
+    hits = mapping.iloc[I].copy()
+    hits["score"] = D
+    hits = hits.sort_values("score", ascending=False)
+    if args.dedup_radius > 0:
+        hits = dedup_temporal(hits, radius=args.dedup_radius)
+        hits = hits.head(args.topk)
+    else:
+        hits = hits.head(args.topk)
+
+    cols = ["video_id","frame_idx","n","pts_time","keyframe_path","score"]
+    print(hits[cols].to_string(index=False))
+
+if __name__ == "__main__":
+    main()

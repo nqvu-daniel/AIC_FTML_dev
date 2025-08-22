@@ -1,0 +1,5 @@
+
+name: aic_tools
+version: 0.1.0
+description: Operators for AI-Challenge retrieval (hybrid search + rerank + export)
+url: https://example.com/aic_tools

@@ -1,15 +1,16 @@
 
-# Developer Guide — AI-Challenge Keyframe Retriever
+# Developer Guide — AI-Challenge Intelligent Retrieval System
 
 Welcome! This guide is for a **first-timer** to get productive in under an hour.
 
 ---
 
 ## 0) TL;DR
-- `index.py` builds a **dense** FAISS index over keyframes (or uses `features/*.npy`).
+- `frames_intelligent*.py` extracts **intelligent keyframes** to augment competition data (~70-90% compression).
+- `index.py` builds a **dense** FAISS index over ALL keyframes (competition + intelligent).
 - `build_text.py` builds a **light text corpus** per keyframe (media title/description/keywords + top object labels).
 - `search_hybrid.py` runs **Dense + BM25** with **RRF fusion**.
-- `search_hybrid_rerank.py` (NEW) applies a **learned re-ranker** over the fused shortlist.
+- `search_hybrid_rerank.py` applies a **learned re-ranker** over the fused shortlist.
 - `export_csv*.py` writes the **CodaLab CSV** per query.
 
 ---
@@ -18,6 +19,9 @@ Welcome! This guide is for a **first-timer** to get productive in under an hour.
 ```
 ai_challenge_retriever/
   artifacts/                      # indices, mapping, text corpus, trained reranker
+  frames_auto.py                  # basic uniform/shot sampling (baseline)
+  frames_intelligent.py           # intelligent temporal window sampling (NEW)
+  frames_intelligent_fast.py      # optimized version for large datasets (NEW)
   index.py                        # dense index builder
   build_text.py                   # text corpus builder
   search.py                       # dense-only search (baseline)
@@ -25,6 +29,9 @@ ai_challenge_retriever/
   search_hybrid_rerank.py         # hybrid + learned re-ranker (training optional)
   export_csv.py                   # dense-only CSV export
   export_csv_hybrid.py            # hybrid CSV export
+  multiframe_rerank.py            # temporal context re-scoring
+  train_reranker_gbm.py           # GBM training
+  prf_expand.py                   # query expansion
   config.py
   utils.py
   README.md
@@ -36,23 +43,31 @@ ai_challenge_retriever/
 ## 2) Dataset layout (what the code expects)
 ```
 dataset_root/
-  keyframes/{VID}/{n:03}.png
-  meta/{VID}.map_keyframe.csv          # columns: n, pts_time, fps, frame_idx
+  videos/{VID}.mp4                     # original videos
+  keyframes/{VID}/{n:03}.png           # competition-provided keyframes
+  keyframes_intelligent/{VID}/{n:03}.png # our intelligent samples (NEW)
+  meta/{VID}.map_keyframe.csv          # columns: n, pts_time, fps, frame_idx, [importance_score]
   meta/{VID}.media_info.json           # title, description, keywords (optional)
   meta/objects/{VID}/{n:03}.json       # detected objects (optional)
   features/{VID}.npy                   # optional precomputed features [T,D]
 ```
 
 > The code maps **keyframe index `n` → frame_idx** via `map_keyframe.csv`.  
-> CSV submission lines are **(video_id, frame_idx[, answer])** — no header.
+> CSV submission lines are **(video_id, frame_idx[, answer])** — no header.  
+> **NEW:** Intelligent sampling adds importance scores to help prioritize frames.
 
 ---
 
-## 3) Quickstart (dense + hybrid + reranker)
+## 3) Quickstart (intelligent sampling + dense + hybrid + reranker)
 ```bash
 pip install -r requirements.txt
 
-# Dense index
+# Extract intelligent keyframes (NEW - do this first!)
+python frames_intelligent.py --dataset_root /path/to/dataset --videos L21_V001 --mode intelligent
+# Or for speed on large datasets:
+# python frames_intelligent_fast.py --dataset_root /path/to/dataset --videos L21_V001 --mode ultra_fast
+
+# Dense index (now indexes BOTH competition + intelligent keyframes)
 python index.py --dataset_root /path/to/dataset_root --videos L21_V001
 
 # Text corpus (media_info + objects)
@@ -94,8 +109,13 @@ This yields a probability that a frame matches the query. It’s **fast**, **dat
 ---
 
 ## 6) Developer workflow
-1. **Add a new video**: put PNG keyframes in `keyframes/{VID}`, add `meta/{VID}.map_keyframe.csv`, optional media_info/objects JSON.
-2. **Rebuild** index and text corpus: `index.py` + `build_text.py`.
+1. **Add a new video**: 
+   - Place video in `videos/{VID}.mp4`
+   - Run intelligent sampling: `frames_intelligent.py --videos {VID}`
+   - Competition keyframes go in `keyframes/{VID}/`
+   - Intelligent frames saved to `keyframes_intelligent/{VID}/`
+   - Mapping saved to `meta/{VID}.map_keyframe.csv`
+2. **Rebuild** index and text corpus: `index.py` + `build_text.py` (indexes ALL frames).
 3. **Test** queries with `search_hybrid.py`.
 4. **Collect dev labels** (JSONL) and run `train_reranker.py`.
 5. **Use** `search_hybrid_rerank.py` for submissions and `export_csv_hybrid.py` to produce CSV.

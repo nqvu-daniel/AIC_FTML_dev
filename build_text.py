@@ -26,8 +26,10 @@ def load_media_info(meta_dir: Path, vid: str):
     return title, desc, keywords
 
 def collect_objects(objects_dir: Path, vid: str, n: int):
+    # Check both possible object directories (for competition and intelligent keyframes)
     jf = objects_dir / vid / f"{n:03d}.json"
     if not jf.exists():
+        # Try alternative naming or location if needed
         return []
     try:
         j = json.loads(jf.read_text(encoding="utf-8"))

@@ -45,12 +45,29 @@ def main():
         if not map_csv.exists():
             raise FileNotFoundError(map_csv)
         df = pd.read_csv(map_csv)
-        # Expect columns: n, pts_time, fps, frame_idx
-        kf_dir = root / "keyframes" / vid
-        kf_paths = [(kf_dir / f"{int(n):03d}.png") for n in df["n"]]
-        for p in kf_paths:
-            if not p.exists():
-                raise FileNotFoundError(p)
+        # Expect columns: n, pts_time, fps, frame_idx, [importance_score]
+        
+        # Collect keyframes from both directories (competition + intelligent)
+        kf_paths = []
+        importance_scores = []
+        
+        for _, row in df.iterrows():
+            n = int(row["n"])
+            
+            # Try intelligent keyframes first, then competition keyframes
+            intelligent_path = root / "keyframes_intelligent" / vid / f"{n:03d}.png"
+            competition_path = root / "keyframes" / vid / f"{n:03d}.png"
+            
+            if intelligent_path.exists():
+                kf_paths.append(intelligent_path)
+            elif competition_path.exists():
+                kf_paths.append(competition_path)
+            else:
+                raise FileNotFoundError(f"Keyframe {n:03d}.png not found for {vid}")
+            
+            # Get importance score if available
+            importance = row.get("importance_score", 1.0)
+            importance_scores.append(float(importance))
 
         if args.use_precomputed:
             feat_file = root / "features" / f"{vid}.npy"
@@ -72,16 +89,17 @@ def main():
         start_idx = sum(x.shape[0] for x in all_vecs)
         all_vecs.append(vecs)
 
-        # mapping rows
-        for i, (n, pts, fps, fidx, p) in enumerate(zip(df["n"], df["pts_time"], df["fps"], df["frame_idx"], kf_paths)):
+        # mapping rows with importance scores
+        for i, (idx, row) in enumerate(df.iterrows()):
             rows.append({
                 "global_idx": start_idx + i,
                 "video_id": vid,
-                "n": int(n),
-                "pts_time": float(pts),
-                "fps": float(fps),
-                "frame_idx": int(fidx),
-                "keyframe_path": str(p)
+                "n": int(row["n"]),
+                "pts_time": float(row["pts_time"]),
+                "fps": float(row["fps"]),
+                "frame_idx": int(row["frame_idx"]),
+                "keyframe_path": str(kf_paths[i]),
+                "importance_score": importance_scores[i]
             })
 
     X = np.concatenate(all_vecs, axis=0).astype("float32")

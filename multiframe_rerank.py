@@ -68,8 +68,18 @@ def main():
             if key not in mapping.index:
                 continue
             m = mapping.loc[key]
-            img_path = args.dataset_root / "keyframes" / vid / f"{int(m['n']):03d}.png"
-            imgs.append(load_image(img_path))
+            # Try intelligent keyframes first, then competition keyframes
+            intelligent_path = args.dataset_root / "keyframes_intelligent" / vid / f"{int(m['n']):03d}.png"
+            competition_path = args.dataset_root / "keyframes" / vid / f"{int(m['n']):03d}.png"
+            
+            if intelligent_path.exists():
+                img_path = intelligent_path
+            elif competition_path.exists():
+                img_path = competition_path
+            else:
+                continue
+            
+            imgs.append(load_image(str(img_path)))
         feats = encode_imgs(model, preprocess, device, imgs)
         if feats is None: 
             agg = row["score"]

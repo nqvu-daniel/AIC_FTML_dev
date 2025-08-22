@@ -61,6 +61,7 @@ def collect_features(query, mapping, index, bm25, tokens_list, top_dense=600, to
             "rank_dense": r_dense,
             "rank_bm25": r_bm25,
             "token_overlap": overlap,
+            "importance_score": float(r.get("importance_score", 1.0)),  # Add importance if available
         })
     df = pd.DataFrame(rows).sort_values(["video_id","n"])
     # neighbor consensus
@@ -111,7 +112,7 @@ def main():
             feats = collect_features(j["query"], mapping, index, bm25, tokens_list)
             feats = label(feats, j.get("positives", []))
             feats = feats.sort_values(["dense_score","bm25_score"], ascending=False).head(800)
-            cols = ["dense_score","bm25_score","rank_dense","rank_bm25","token_overlap","neighbor_consensus"]
+            cols = ["dense_score","bm25_score","rank_dense","rank_bm25","token_overlap","neighbor_consensus","importance_score"]
             X.extend(feats[cols].values.tolist()); y.extend(feats["label"].values.tolist())
     import numpy as np
     X = np.array(X); y = np.array(y)
@@ -119,7 +120,7 @@ def main():
     clf.fit(X, y)
     from joblib import dump
     args.outfile.parent.mkdir(parents=True, exist_ok=True)
-    dump({"model": clf, "feature_names": ["dense_score","bm25_score","rank_dense","rank_bm25","token_overlap","neighbor_consensus"]}, args.outfile)
+    dump({"model": clf, "feature_names": ["dense_score","bm25_score","rank_dense","rank_bm25","token_overlap","neighbor_consensus","importance_score"]}, args.outfile)
     print(f"[OK] trained GBM reranker on {len(y)} samples; saved -> {args.outfile}")
 
 if __name__=="__main__":

@@ -67,6 +67,7 @@ def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_d
             "rank_dense": r_dense,
             "rank_bm25": r_bm25,
             "token_overlap": overlap,
+            "importance_score": float(r.get("importance_score", 1.0)),  # Add importance if available
         })
     df = pd.DataFrame(rows)
     # neighbor consensus
@@ -124,6 +125,13 @@ def main():
         bundle = joblib.load(args.model_path)
         model = bundle["model"]
         feat_names = bundle["feature_names"]
+        # Ensure all required features exist (add default if missing)
+        for feat in feat_names:
+            if feat not in feats.columns:
+                if feat == "importance_score":
+                    feats[feat] = 1.0  # Default importance
+                else:
+                    feats[feat] = 0.0
         X = feats[feat_names].values
         probs = model.predict_proba(X)[:,1]
         feats["score"] = probs

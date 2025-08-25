@@ -103,10 +103,24 @@ def is_video_file(p: Path) -> bool:
 
 def looks_like_vid_folder(name: str) -> bool:
     # e.g., L21_V001 or L26_V012
-    return bool(re.match(r"^L\d{2}[_-]V\d{3}$", name, re.IGNORECASE))
+    result = bool(re.match(r"^L\d{2}[_-]V\d{3}$", name, re.IGNORECASE))
+    if result:
+        print(f"[DEBUG] Found video folder: {name}")
+    return result
 
 
 def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
+    """
+    Sort extracted files into AIC 2025 dataset structure.
+    
+    Expected structures after extraction:
+    - Keyframes_L21/keyframes/L21_V001/*.png
+    - Videos_L21_a/L21_V001.mp4
+    - map-keyframes/L21_V001.csv
+    - media-info/L21_V001.json
+    - objects/L26_V361/155.json
+    - clip-features-32/L21_V001.npy
+    """
     vids_dir = dataset_root / "videos"
     kf_dir = dataset_root / "keyframes"
     meta_dir = dataset_root / "meta"
@@ -122,41 +136,44 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
             name = src.name
             lower = name.lower()
 
-            # Features
-            if src.suffix.lower() == ".npy":
+            # CLIP Features: L21_V001.npy files from clip-features-32/ folder
+            if src.suffix.lower() == ".npy" and "_V" in name and "clip-features" in str(src.parents[0]):
                 dst = feat_dir / name
                 ensure_dir(dst.parent)
                 _move_if_needed(src, dst)
+                print(f"[DEBUG] Moved CLIP features: {name}")
                 continue
 
-            # Meta: map_keyframe and media_info
-            if lower.endswith(".map_keyframe.csv"):
+            # Meta: map_keyframe CSV files (L21_V001.csv from map-keyframes/ folder)
+            if src.suffix.lower() == ".csv" and "_V" in name and "map-keyframes" in str(src.parents[0]):
                 dst = meta_dir / name
                 _move_if_needed(src, dst)
+                print(f"[DEBUG] Moved map-keyframe CSV: {name}")
                 continue
-            if lower.endswith(".media_info.json"):
+            
+            # Meta: media_info JSON files (L21_V001.json from media-info/ folder)  
+            if src.suffix.lower() == ".json" and "_V" in name and "media-info" in str(src.parents[0]):
                 dst = meta_dir / name
                 _move_if_needed(src, dst)
+                print(f"[DEBUG] Moved media-info JSON: {name}")
                 continue
 
-            # Objects JSON: detect by folder name 'objects' or filename pattern 001.json etc
-            if src.suffix.lower() == ".json" and not lower.endswith(".media_info.json"):
-                # try to infer video id from parent folders
-                parents = list(src.parents)
+            # Objects JSON: files from objects/L26_V361/155.json structure
+            if (src.suffix.lower() == ".json" and 
+                "objects" in str(src.parents[0]) and 
+                not "media-info" in str(src.parents[0])):
+                # Find video folder in parents (L26_V361, etc.)
                 vid = None
-                for p in parents:
+                for p in src.parents:
                     if looks_like_vid_folder(p.name):
                         vid = p.name
                         break
-                if vid is None:
-                    # fallback: strip prefix 'objects-'
-                    m = re.search(r"(L\d{2}[_-]V\d{3})", name, re.IGNORECASE)
-                    if m:
-                        vid = m.group(1).replace("-", "_")
+                
                 if vid:
                     dst = obj_dir / vid / name
                     ensure_dir(dst.parent)
                     _move_if_needed(src, dst)
+                    print(f"[DEBUG] Moved object detection JSON: {vid}/{name}")
                     continue
 
             # Videos
@@ -167,20 +184,36 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
 
             # Keyframes PNG
             if src.suffix.lower() == ".png":
-                # find VID folder in parents; else keep in a flat folder
+                # find VID folder in parents; structure is like Keyframes_L21/keyframes/L21_V001/001.png
                 vid = None
                 for p in src.parents:
                     if looks_like_vid_folder(p.name):
                         vid = p.name
                         break
+                
+                # Special case: if we're in a keyframes subfolder, look one level up
+                if vid is None and "keyframes" in str(src.parents[0]):
+                    for p in src.parents[1:]:
+                        if looks_like_vid_folder(p.name):
+                            vid = p.name
+                            break
+                
                 if vid is None:
-                    # heuristic: paths like .../Keyframes_L21/L21_V001/001.png
-                    # above loop should have found; if not, leave under keyframes/_misc
-                    dst = kf_dir / "_misc" / name
-                else:
+                    # Final fallback: try to infer from path structure
+                    path_str = str(src)
+                    match = re.search(r'(L\d{2}).*?(L\d{2}_V\d{3})', path_str)
+                    if match:
+                        vid = match.group(2)
+                        print(f"[DEBUG] Inferred video folder from path: {vid}")
+                    else:
+                        print(f"[DEBUG] Could not find video folder for: {src}")
+                        print(f"[DEBUG] Parent folders: {[p.name for p in src.parents]}")
+                        dst = kf_dir / "_misc" / name
+                
+                if vid:
                     dst = kf_dir / vid / name
-                ensure_dir(dst.parent)
-                _move_if_needed(src, dst)
+                    ensure_dir(dst.parent)
+                    _move_if_needed(src, dst)
                 continue
 
             # Other CSVs might belong to meta (keep them for debugging)

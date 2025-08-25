@@ -69,9 +69,9 @@ python smart_pipeline.py /path/to/your/dataset --workers 8 --no-gpu
 ### GPU Support & Requirements
 - **Recommended**: NVIDIA GPU with 8GB+ VRAM for faster processing
 - **CPU fallback**: Works on CPU-only systems (slower embedding/search)
-- **FAISS GPU**: Auto-detects CUDA and installs `faiss-gpu` vs `faiss-cpu`
+- **FAISS**: Automatically detects GPU and uses it when available
 - **Index types**: Flat index for GPU acceleration, HNSW for CPU-only
-- **Colab**: Both notebooks auto-detect and configure GPU/CPU appropriately
+- **Colab**: Both notebooks auto-detect GPU and install appropriate FAISS version
 
 ### Search and Export
 ```bash
@@ -89,8 +89,6 @@ python src/retrieval/use.py --query "your search" --query_id q123
 # VQA format (3 columns): video_id,frame_idx,answer
 python src/retrieval/use.py --query "question text" --task vqa --answer "màu xanh" --query_id q_vqa_01
 
-# GPU acceleration (requires faiss-gpu and flat index)
-python src/retrieval/use.py --query "your search" --faiss_gpu
 
 # Export baseline fusion (RRF) CSV explicitly (also supports --answer)
 python src/retrieval/export_csv.py --index_dir ./artifacts \
@@ -426,7 +424,7 @@ python scripts/prepare_pipeline_dir.py --outdir my_pipeline --artifact_dir ./art
 **`notebooks/colab_official_eval.ipynb`** - Official evaluation & submission:
 - Per-query CSV generation with proper naming (`{query_id}.csv`)
 - Supports KIS/VQA tasks with ground truth evaluation
-- Auto-detects GPU and installs faiss-gpu for faster search
+- Auto-detects GPU and uses it for faster search
 - Lighter notebook focused on inference and scoring
 
 ## Performance Expectations

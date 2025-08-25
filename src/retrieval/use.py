@@ -207,11 +207,6 @@ def main():
         default=None,
         help="Optional URL to a zip/tar bundle containing index.faiss, mapping.parquet, text_corpus.jsonl, and optionally reranker.joblib",
     )
-    ap.add_argument(
-        "--faiss_gpu",
-        action="store_true",
-        help="If set and CUDA is available, move a compatible FAISS index to GPU for faster search (requires faiss-gpu and typically a Flat index)",
-    )
     args = ap.parse_args()
 
     # Resolve outfile
@@ -240,25 +235,25 @@ def main():
     # Load artifacts
     mapping = from_parquet(mapping_path).reset_index(drop=True)
     index = load_faiss(index_path)
-    # Optionally move FAISS index to GPU (only for compatible index types, e.g., IndexFlatIP)
-    if args.faiss_gpu:
-        try:
-            import faiss  # noqa: F401
-            if torch.cuda.is_available():
-                try:
-                    # Avoid moving HNSW to GPU as it's not supported in faiss-gpu
+    
+    # Auto-detect and use GPU if available
+    try:
+        import faiss
+        if torch.cuda.is_available():
+            try:
+                # Check if faiss-gpu is installed and index is compatible
+                if hasattr(faiss, 'StandardGpuResources'):
                     if isinstance(index, faiss.IndexHNSWFlat):
-                        print("[INFO] Detected HNSW index; keeping on CPU (GPU not supported for HNSW)")
+                        print("[INFO] HNSW index detected - keeping on CPU (not GPU-compatible)")
                     else:
                         res = faiss.StandardGpuResources()
                         index = faiss.index_cpu_to_gpu(res, 0, index)
-                        print("[OK] FAISS index moved to GPU:0")
-                except Exception as e:
-                    print(f"[WARN] Could not move FAISS index to GPU: {e}")
-            else:
-                print("[INFO] CUDA not available; --faiss_gpu ignored (using CPU index)")
-        except Exception as e:
-            print(f"[WARN] faiss-gpu not available or import failed: {e}")
+                        print("[INFO] FAISS index automatically moved to GPU")
+            except Exception as e:
+                # Silent fallback to CPU
+                pass
+    except ImportError:
+        pass
     raw_docs, tokens_list = [], []
     with open(corpus_path, "r", encoding="utf-8") as f:
         for line in f:

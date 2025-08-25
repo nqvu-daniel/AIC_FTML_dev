@@ -66,6 +66,13 @@ python smart_pipeline.py /path/to/your/dataset --workers 8 --no-gpu
 - Run end‑to‑end via CLI: `python smart_pipeline.py /data/aic2024`.
 - No web service is included by default; this project is CLI‑first. A thin API can be added if needed.
 
+### GPU Support & Requirements
+- **Recommended**: NVIDIA GPU with 8GB+ VRAM for faster processing
+- **CPU fallback**: Works on CPU-only systems (slower embedding/search)
+- **FAISS GPU**: Auto-detects CUDA and installs `faiss-gpu` vs `faiss-cpu`
+- **Index types**: Flat index for GPU acceleration, HNSW for CPU-only
+- **Colab**: Both notebooks auto-detect and configure GPU/CPU appropriately
+
 ### Search and Export
 ```bash
 # One-shot search (recommended for users). Writes Top-100 CSV to submissions/
@@ -76,10 +83,28 @@ python src/retrieval/use.py --query "your search description"
 python src/retrieval/search_hybrid_rerank.py --index_dir ./artifacts \
   --query "your search description" --topk 100
 
-# Export baseline fusion (RRF) CSV explicitly
+# Official submission naming (per-query files): write directly to submissions/{query_id}.csv
+python src/retrieval/use.py --query "your search" --query_id q123
+
+# VQA format (3 columns): video_id,frame_idx,answer
+python src/retrieval/use.py --query "question text" --task vqa --answer "màu xanh" --query_id q_vqa_01
+
+# GPU acceleration (requires faiss-gpu and flat index)
+python src/retrieval/use.py --query "your search" --faiss_gpu
+
+# Export baseline fusion (RRF) CSV explicitly (also supports --answer)
 python src/retrieval/export_csv.py --index_dir ./artifacts \
-  --query "search query" --outfile submissions/query.csv
+  --query "search query" --outfile submissions/q123.csv
 ```
+
+## Official Submission & Evaluation
+
+**📋 See [`EVALUATION.md`](EVALUATION.md) for complete evaluation instructions, CSV formats, and official scoring.**
+
+Quick reference:
+- Single query: `python src/retrieval/use.py --query "search" --query_id q123 --task kis`
+- Batch creation: `python scripts/make_submission.py --spec queries.json --index_dir ./artifacts`
+- Ground truth format: KIS/VQA use `span: [start,end]`, TRAKE uses `spans: [[s1,e1],...]`
 
 ### CLI Cheatsheet (Developers)
 # The steps below (sampling, indexing, corpus building, training) are for development.
@@ -87,6 +112,8 @@ python src/retrieval/export_csv.py --index_dir ./artifacts \
 - Validate + preprocess: `python scripts/dataset_validator.py /path/to/dataset`
 - Intelligent sampling: `python src/sampling/frames_intelligent.py --dataset_root /path/to/dataset --videos L21 L22 --target_fps 0.5 --use_gpu`
 - Build index: `python scripts/index.py --dataset_root /path/to/dataset --videos L21 L22`
+  - Add `--flat` for GPU-compatible flat index (faster search with faiss-gpu)
+  - Default HNSW index works on CPU but not GPU-accelerated
 - Build text corpus: `python scripts/build_text.py --dataset_root /path/to/dataset --videos L21 L22`
 - Train re‑ranker: `python src/training/train_reranker.py --index_dir ./artifacts --train_jsonl data/train.jsonl`
 - Search (auto‑uses model if present): `python src/retrieval/search_hybrid_rerank.py --index_dir ./artifacts --query "query" --topk 100`
@@ -148,6 +175,7 @@ Notes
 - Final Score: Average of best scores at Top-1, Top-5, Top-20, Top-50, and Top-100
 - Submission: Up to 100 candidates per query
 - Format: CSV files without headers
+ - KIS: `video_id,frame_idx`; VQA: `video_id,frame_idx,answer`; TRAKE: `video_id,frame1,frame2,...,frameN`
 
 ## Dataset Structure
 
@@ -387,6 +415,19 @@ python scripts/package_artifacts.py --artifact_dir ./artifacts --output ./artifa
 python scripts/prepare_pipeline_dir.py --outdir my_pipeline --artifact_dir ./artifacts --include_model --force
 # my_pipeline/ contains: src/retrieval/use.py, config.py, utils.py, artifacts/*, submissions/
 ```
+
+### Colab Notebooks
+**`notebooks/colab_pipeline.ipynb`** - Complete development pipeline:
+- Host inference: Uses pre-built artifacts for instant queries
+- Dev pipeline: Downloads dataset, builds artifacts, trains reranker (optional)
+- Auto-detects GPU and builds flat index for GPU acceleration
+- Outputs ready-to-deploy `my_pipeline/` directory
+
+**`notebooks/colab_official_eval.ipynb`** - Official evaluation & submission:
+- Per-query CSV generation with proper naming (`{query_id}.csv`)
+- Supports KIS/VQA tasks with ground truth evaluation
+- Auto-detects GPU and installs faiss-gpu for faster search
+- Lighter notebook focused on inference and scoring
 
 ## Performance Expectations
 

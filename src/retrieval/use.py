@@ -185,8 +185,8 @@ def _maybe_download_and_unpack_bundle(bundle_url: str, index_dir: Path) -> bool:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="One-shot search: outputs Top-100 CSV for KIS")
-    ap.add_argument("--query", required=True, help="Text query")
+    ap = argparse.ArgumentParser(description="One-shot search: outputs Top-100 CSV per official format")
+    ap.add_argument("--query", required=True, help="Text query for retrieval (KIS/VQA)")
     ap.add_argument("--index_dir", type=Path, default=config.ARTIFACT_DIR)
     ap.add_argument("--topk", type=int, default=100)
     ap.add_argument("--dedup_radius", type=int, default=1)
@@ -194,8 +194,11 @@ def main():
         "--outfile",
         type=Path,
         default=None,
-        help="Output CSV path. Defaults to submissions/kis_<slug>.csv",
+        help="Output CSV path. If not set and --query_id is provided, writes submissions/{query_id}.csv; else submissions/kis_<slug>.csv",
     )
+    ap.add_argument("--query_id", type=str, default=None, help="Official query identifier to name file as submissions/{query_id}.csv")
+    ap.add_argument("--task", type=str, choices=["kis", "vqa"], default="kis", help="Task format for CSV output")
+    ap.add_argument("--answer", type=str, default=None, help="VQA: Answer text to include as third column")
     ap.add_argument("--model_path", type=Path, default=Path("./artifacts/reranker.joblib"))
     ap.add_argument("--model_url", type=str, default=None, help="Optional URL to download reranker if missing")
     ap.add_argument(
@@ -204,12 +207,20 @@ def main():
         default=None,
         help="Optional URL to a zip/tar bundle containing index.faiss, mapping.parquet, text_corpus.jsonl, and optionally reranker.joblib",
     )
+    ap.add_argument(
+        "--faiss_gpu",
+        action="store_true",
+        help="If set and CUDA is available, move a compatible FAISS index to GPU for faster search (requires faiss-gpu and typically a Flat index)",
+    )
     args = ap.parse_args()
 
     # Resolve outfile
     if args.outfile is None:
-        slug = slugify(args.query)
-        args.outfile = Path("submissions") / f"kis_{slug}.csv"
+        if args.query_id:
+            args.outfile = Path("submissions") / f"{args.query_id}.csv"
+        else:
+            slug = slugify(args.query)
+            args.outfile = Path("submissions") / f"kis_{slug}.csv"
 
     # Check required artifacts
     mapping_path = args.index_dir / "mapping.parquet"
@@ -229,6 +240,25 @@ def main():
     # Load artifacts
     mapping = from_parquet(mapping_path).reset_index(drop=True)
     index = load_faiss(index_path)
+    # Optionally move FAISS index to GPU (only for compatible index types, e.g., IndexFlatIP)
+    if args.faiss_gpu:
+        try:
+            import faiss  # noqa: F401
+            if torch.cuda.is_available():
+                try:
+                    # Avoid moving HNSW to GPU as it's not supported in faiss-gpu
+                    if isinstance(index, faiss.IndexHNSWFlat):
+                        print("[INFO] Detected HNSW index; keeping on CPU (GPU not supported for HNSW)")
+                    else:
+                        res = faiss.StandardGpuResources()
+                        index = faiss.index_cpu_to_gpu(res, 0, index)
+                        print("[OK] FAISS index moved to GPU:0")
+                except Exception as e:
+                    print(f"[WARN] Could not move FAISS index to GPU: {e}")
+            else:
+                print("[INFO] CUDA not available; --faiss_gpu ignored (using CPU index)")
+        except Exception as e:
+            print(f"[WARN] faiss-gpu not available or import failed: {e}")
     raw_docs, tokens_list = [], []
     with open(corpus_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -269,9 +299,16 @@ def main():
     feats = feats.sort_values("score", ascending=False)
     feats = dedup_temporal(feats, radius=args.dedup_radius).head(args.topk)
 
-    # Write CSV
+    # Write CSV per official format
     args.outfile.parent.mkdir(parents=True, exist_ok=True)
-    feats[["video_id", "frame_idx"]].to_csv(args.outfile, header=False, index=False)
+    if args.task == "kis":
+        feats[["video_id", "frame_idx"]].to_csv(args.outfile, header=False, index=False)
+    else:
+        if args.answer is None:
+            raise SystemExit("For task=vqa, please provide --answer to include third column as per official format")
+        outdf = feats[["video_id", "frame_idx"]].copy()
+        outdf["answer"] = args.answer
+        outdf.to_csv(args.outfile, header=False, index=False)
     print(f"[OK] wrote {len(feats)} lines → {args.outfile}")
 
 

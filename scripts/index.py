@@ -15,8 +15,12 @@ def embed_keyframes(model, preprocess, device, kf_paths):
         batch_paths = kf_paths[i:i+bs]
         imgs = [preprocess(load_image(p)).unsqueeze(0) for p in batch_paths]
         imgs = torch.cat(imgs).to(device)
-        with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16 if device.type=='cuda' else torch.bfloat16):
-            img_feats = model.encode_image(imgs)
+        with torch.no_grad():
+            if device.type == 'cuda':
+                with torch.autocast(device_type='cuda', dtype=torch.float16):
+                    img_feats = model.encode_image(imgs)
+            else:
+                img_feats = model.encode_image(imgs)
         img_feats = img_feats.float().cpu().numpy()
         embs.append(img_feats)
     return np.concatenate(embs, axis=0)
@@ -35,7 +39,6 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, _, preprocess = open_clip.create_model_and_transforms(config.MODEL_NAME, pretrained=config.MODEL_PRETRAINED, device=device)
-    tokenizer = open_clip.get_tokenizer(config.MODEL_NAME)
 
     all_vecs = []
     rows = []

@@ -16,8 +16,12 @@ def simple_tokenize(text: str):
 
 def encode_text(model, tokenizer, device, text: str):
     tok = tokenizer([text]).to(device)
-    with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16 if device.type=='cuda' else torch.bfloat16):
-        t = model.encode_text(tok)
+    with torch.no_grad():
+        if device.type == 'cuda':
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                t = model.encode_text(tok)
+        else:
+            t = model.encode_text(tok)
     t = t.float().cpu().numpy()
     t = t / (np.linalg.norm(t, axis=1, keepdims=True) + 1e-12)
     return t

@@ -1,0 +1,25 @@
+# Conda configuration for AIC-FTML project
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+# Prefer these channels in order
+channel_priority: strict
+
+# Always show progress bars
+show_channel_urls: true
+
+# Cache packages for faster reinstalls
+pkgs_dirs:
+  - ~/miniconda3/pkgs
+  - ~/.conda/pkgs
+
+# Environment configuration
+envs_dirs:
+  - ~/miniconda3/envs
+  - ~/.conda/envs
+
+# Solver settings for better dependency resolution
+solver: libmamba

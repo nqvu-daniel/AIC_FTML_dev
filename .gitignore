@@ -1,0 +1,36 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Artifacts and outputs
+artifacts/
+*.faiss
+*.index
+*.parquet
+*.joblib
+*.jsonl
+*.log
+logs/
+submissions/
+temp/
+downloads/
+_extracted_tmp/
+videos/
+keyframes/
+keyframes_intelligent/
+features/
+meta/
+my_pipeline/
+
+# Archives and bundles
+*.zip
+*.tar
+*.tar.gz
+artifacts_bundle*.tar.gz
+
+# Environments
+.env
+.venv
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

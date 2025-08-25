@@ -22,9 +22,11 @@ class RunHybridSearch(foo.Operator):
         q = ctx.params["query"]
         index_dir = ctx.params.get("index_dir","./artifacts")
         topk = int(ctx.params.get("topk",50))
-        # call search script
-        cmd = ["python","search_hybrid_rerank.py","--index_dir",index_dir,"--query",q,"--topk",str(topk)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        # call search script (resolve path relative to repo root)
+        repo_root = Path(__file__).resolve().parents[2]
+        script = repo_root / "src" / "retrieval" / "search_hybrid_rerank.py"
+        cmd = ["python", str(script), "--index_dir", index_dir, "--query", q, "--topk", str(topk)]
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(repo_root))
         ctx.log(res.stdout)
         # naive parse to extract (video_id, frame_idx, n)
         lines = [l for l in res.stdout.splitlines() if l.strip() and not l.startswith(("video_id","-"))]

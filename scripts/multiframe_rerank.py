@@ -2,6 +2,7 @@
 import argparse, json
 from pathlib import Path
 import numpy as np, pandas as pd, torch, open_clip, cv2
+from PIL import Image
 from utils import from_parquet
 import config
 
@@ -16,23 +17,31 @@ def encode_imgs(model, preprocess, device, imgs):
     # imgs: list of RGB np arrays
     tensors = []
     for im in imgs:
-        if im is None: 
+        if im is None:
             continue
-        pil = preprocess.transforms[-1](im) if hasattr(preprocess, 'transforms') else preprocess(im)
-        tensors.append(pil)
+        pil = Image.fromarray(im)
+        tensors.append(preprocess(pil))
     if not tensors:
         return None
     batch = torch.stack(tensors).to(device)
-    with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16 if device.type=='cuda' else torch.bfloat16):
-        feats = model.encode_image(batch)
+    with torch.no_grad():
+        if device.type == 'cuda':
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                feats = model.encode_image(batch)
+        else:
+            feats = model.encode_image(batch)
     feats = feats.float()
     feats = feats / (feats.norm(dim=1, keepdim=True) + 1e-12)
     return feats.cpu().numpy()
 
 def encode_text(model, tokenizer, device, text):
     tok = tokenizer([text]).to(device)
-    with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.float16 if device.type=='cuda' else torch.bfloat16):
-        t = model.encode_text(tok)
+    with torch.no_grad():
+        if device.type == 'cuda':
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                t = model.encode_text(tok)
+        else:
+            t = model.encode_text(tok)
     t = t.float().cpu().numpy()
     t = t / (np.linalg.norm(t, axis=1, keepdims=True) + 1e-12)
     return t

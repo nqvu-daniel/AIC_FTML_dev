@@ -180,11 +180,25 @@ class AdvancedFrameSampler:
             return []
         
         # Get video properties
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = frame_count / fps
+        duration = frame_count / fps if fps > 0 else 0
         
-        print(f"Processing {video_path.name}: {frame_count} frames, {fps:.2f} fps, {duration:.2f}s")
+        print(f"Video stats: {frame_count} frames, {fps:.1f} fps, {duration:.1f}s")
+        
+        # Safety checks to prevent hanging
+        if frame_count <= 0:
+            print("ERROR: Invalid video - no frames detected")
+            cap.release()
+            return []
+        
+        if frame_count > 100000:  # ~55 minutes at 30fps
+            print("WARNING: Very long video detected, may take time to process")
+        
+        if duration > 3600:  # 1 hour
+            print("ERROR: Video too long (>1 hour), skipping for safety")
+            cap.release()
+            return []
         
         # Read all frames (for smaller videos) or sample strategically
         frames = []
@@ -256,21 +270,48 @@ class AdvancedFrameSampler:
         """Process a single video with advanced intelligent sampling"""
         print(f"\n=== Processing video collection: {video_id} ===")
         
-        # Find video files for this collection
+        # Find video files for this collection - expand collection ID to individual videos
         video_dir = self.dataset_root / "videos"
-        video_files = list(video_dir.glob(f"{video_id}_*.mp4")) + list(video_dir.glob(f"{video_id}.mp4"))
-        
-        if not video_files:
-            print(f"No video files found for {video_id}")
+        if not video_dir.exists():
+            print(f"ERROR: Videos directory not found: {video_dir}")
             return False
         
-        all_selected_frames = []
+        # If video_id is a collection (L21), find all videos in that collection
+        if len(video_id) == 3 and video_id.startswith('L'):
+            video_files = sorted(list(video_dir.glob(f"{video_id}_V*.mp4")))
+        else:
+            # Individual video ID
+            video_files = [video_dir / f"{video_id}.mp4"]
+            
+        if not video_files:
+            print(f"ERROR: No video files found for collection {video_id}")
+            return False
+            
+        print(f"Found {len(video_files)} videos in collection {video_id}")
         
+        success_count = 0
         for video_file in video_files:
-            selected_frames = self.smart_sampling(video_file)
-            all_selected_frames.extend(selected_frames)
+            if self.process_single_video(video_file):
+                success_count += 1
+                
+        print(f"Successfully processed {success_count}/{len(video_files)} videos in collection {video_id}")
+        return success_count > 0
+    
+    def process_single_video(self, video_path):
+        """Process a single video file"""
+        video_path = Path(video_path)
+        video_id = video_path.stem  # L21_V001
         
-        if not all_selected_frames:
+        print(f"Processing video: {video_id}")
+        
+        if not video_path.exists():
+            print(f"ERROR: Video file not found: {video_path}")
+            return False
+        
+        # Run intelligent sampling on this video
+        selected_frames = self.smart_sampling(video_path)
+        
+        if not selected_frames:
             print(f"No frames selected for {video_id}")
             return False
         
@@ -280,17 +321,21 @@ class AdvancedFrameSampler:
         
         mapping_data = []
         
-        # Extract and save frames (reuse VideoCapture and FPS)
-        video_file = video_files[0]  # Assume single video for now
-        cap = cv2.VideoCapture(str(video_file))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
-        for i, (frame_idx, importance_score) in enumerate(all_selected_frames):
+        # Extract and save frames
+        cap = cv2.VideoCapture(str(video_path))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        
+        for i, (frame_idx, importance_score) in enumerate(selected_frames):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
             if not ret:
+                print(f"WARNING: Could not read frame {frame_idx}")
                 continue
+                
             frame_filename = f"{i+1:03d}.png"
-            cv2.imwrite(str(output_dir / frame_filename), frame)
+            frame_path = output_dir / frame_filename
+            cv2.imwrite(str(frame_path), frame)
+            
             pts_time = (frame_idx / fps) if fps else 0.0
             mapping_data.append({
                 'n': i + 1,
@@ -299,6 +344,7 @@ class AdvancedFrameSampler:
                 'frame_idx': frame_idx,
                 'importance_score': importance_score
             })
+        
         cap.release()
         
         # Save mapping file

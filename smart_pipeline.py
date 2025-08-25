@@ -115,7 +115,7 @@ class SmartPipeline:
         if self.use_gpu:
             cmd.append("--use_gpu")
         
-        success, output = self.run_command(cmd, "SAMPLING", timeout=7200)  # 2 hours
+        success, output = self.run_command(cmd, "SAMPLING", timeout=1800)  # 30 minutes max
         return success
     
     def build_search_infrastructure(self):

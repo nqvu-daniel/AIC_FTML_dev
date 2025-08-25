@@ -1,8 +1,12 @@
 
-import argparse, json
+import argparse, json, sys
 from pathlib import Path
 import numpy as np, pandas as pd, torch, open_clip, cv2
 from PIL import Image
+
+# Add parent directory to path to import utils
+sys.path.append(str(Path(__file__).parent.parent))
+
 from utils import from_parquet
 import config
 

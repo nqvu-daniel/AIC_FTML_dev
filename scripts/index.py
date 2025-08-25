@@ -1,9 +1,12 @@
-import argparse, os, json, numpy as np, pandas as pd, torch
+import argparse, os, json, numpy as np, pandas as pd, torch, sys
 from pathlib import Path
 from tqdm import tqdm
 import open_clip
 from PIL import Image
 import faiss
+
+# Add parent directory to path to import utils
+sys.path.append(str(Path(__file__).parent.parent))
 
 from utils import ensure_dir, load_image, normalize_rows, save_faiss, to_parquet, as_type
 import config

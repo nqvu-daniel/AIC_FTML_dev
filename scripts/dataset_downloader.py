@@ -224,13 +224,7 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                             vid = match.group(1)
                     
                     if vid:
-                        # First copy to outer folder BEFORE moving
-                        outer_kf_dir = dataset_root / "keyframes_all"
-                        outer_dst = outer_kf_dir / vid / name
-                        ensure_dir(outer_dst.parent)
-                        shutil.copy2(str(src), str(outer_dst))
-                        
-                        # Then move to organized folder
+                        # Move to organized folder only
                         dst = kf_dir / vid / name
                         ensure_dir(dst.parent)
                         _move_if_needed(src, dst)
@@ -363,7 +357,6 @@ def main():
     print("Layout:")
     print(" - videos/ (mp4)")
     print(" - keyframes/<VID>/*.{jpg,jpeg,png} (organized by video)")
-    print(" - keyframes_all/<VID>/*.{jpg,jpeg,png} (copy for general usage)")
     print(" - map_keyframes/*.csv (keyframe mapping files)")
     print(" - media_info/*.json (video metadata)")
     print(" - objects/<VID>/*.json (object detection per video)")

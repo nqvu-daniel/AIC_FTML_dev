@@ -107,7 +107,6 @@ class DatasetValidator:
         required_dirs = [
             "videos",
             "keyframes", 
-            "keyframes_all",
             "keyframes_intelligent",
             "map_keyframes",
             "media_info",

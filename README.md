@@ -185,9 +185,6 @@ dataset_root/
   keyframes/                      # Competition-provided keyframes (organized)
     L21_V001/
       001.jpg 002.jpg ...         # Support .jpg, .jpeg, .png
-  keyframes_all/                  # Competition keyframes (flat access)
-    L21_V001/
-      001.jpg 002.jpg ...         # Support .jpg, .jpeg, .png
   keyframes_intelligent/          # Generated intelligent samples  
     L21_V001/
       001.png 002.png ...

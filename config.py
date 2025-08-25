@@ -4,8 +4,13 @@ from pathlib import Path
 ARTIFACT_DIR = Path("./artifacts")
 
 # Model (OpenCLIP)
-MODEL_NAME = "ViT-L-14"      # good trade-off; try 'ViT-L-14' if you have VRAM
-MODEL_PRETRAINED = "openai"  # 'laion2b_s32b_b82k' also works
+# Default to CLIP ViT-B/32 so it runs without flags
+MODEL_NAME = "ViT-B-32"
+MODEL_PRETRAINED = "openai"
+
+# Default CLIP model (smaller, faster, compatible with precomputed features)
+DEFAULT_CLIP_MODEL = "ViT-B-32"
+DEFAULT_CLIP_PRETRAINED = "openai"
 
 # Embedding dtype for storage
 EMB_DTYPE = "float16"  # 'float32' if you want exact
@@ -27,3 +32,25 @@ ADVANCED_MODELS = [
 # Default advanced pick; can be overridden via CLI
 ADV_MODEL_DEFAULT = "EVA02-L-14"
 
+# --- Experimental presets ---
+# Note: These are convenience presets for --experimental mode.
+# They assume the checkpoint is available in your environment.
+# You can override with --exp-model and --exp-pretrained at runtime.
+EXPERIMENTAL_PRESETS = {
+    # High-quality English retrieval with classic CLIP recipe
+    "bigg": ("ViT-bigG-14", "laion2b_s39b_b160k"),
+    # Strong large CLIP; good trade-off vs bigG
+    "h14": ("ViT-H-14", "laion2b_s32b_b79k"),
+    # EVA02 (open_clip compatible) – lighter than 18B giants
+    "eva02l14": ("EVA02-L-14", "laion2b_s32b_b82k"),
+    # SigLIP family (requires compatible open_clip build/checkpoints)
+    "siglip-so400m-14-384": ("siglip-so400m-patch14-384", "webli"),
+    "siglip-l16-384": ("siglip-L-16-384", "webli"),
+}
+
+# Fallback order used when --experimental is set without explicit --exp-model
+EXPERIMENTAL_FALLBACK_ORDER = [
+    "bigg",
+    "h14",
+    "eva02l14",
+]

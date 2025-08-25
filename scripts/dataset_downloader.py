@@ -126,9 +126,15 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
             
         item_name = item.name.lower()
         
-        # Videos: Copy all Videos_* directories
+        # Videos: Copy all Videos_* directories (they contain a 'video' subfolder)
         if item_name.startswith("videos_"):
-            _copy_all_files(item, dataset_root / "videos", "*.mp4")
+            # Look for 'video' subfolder inside Videos_* directory
+            video_subdir = item / "video"
+            if video_subdir.exists():
+                _copy_all_files(video_subdir, dataset_root / "videos", "*.mp4")
+            else:
+                # Fallback: copy directly from Videos_* if no video subfolder
+                _copy_all_files(item, dataset_root / "videos", "*.mp4")
             
         # Keyframes: Copy from Keyframes_*/keyframes/ structure  
         elif item_name == "keyframes" and any("keyframes_" in p.name.lower() for p in item.parents):

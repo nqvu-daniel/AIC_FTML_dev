@@ -16,7 +16,7 @@ def load_queries(path: Path):
     return data
 
 
-def run_use_py(qid: str, task: str, query: str, answer: str | None, index_dir: Path, topk: int, dedup_radius: int, bundle_url: str | None, model_url: str | None):
+def run_use_py(qid: str, task: str, query: str, answer: str | None, index_dir: Path, topk: int, dedup_radius: int, bundle_url: str | None, model_url: str | None, default_clip: bool = False, experimental: bool = False, exp_model: str | None = None, exp_pretrained: str | None = None):
     cmd = [
         "python",
         "src/retrieval/use.py",
@@ -41,6 +41,14 @@ def run_use_py(qid: str, task: str, query: str, answer: str | None, index_dir: P
         cmd += ["--bundle_url", bundle_url]
     if model_url:
         cmd += ["--model_url", model_url]
+    if default_clip:
+        cmd += ["--default-clip"]
+    if experimental:
+        cmd += ["--experimental"]
+        if exp_model:
+            cmd += ["--exp-model", exp_model]
+        if exp_pretrained:
+            cmd += ["--exp-pretrained", exp_pretrained]
 
     print("→", " ".join(cmd))
     res = subprocess.run(cmd, capture_output=True, text=True)
@@ -59,6 +67,10 @@ def main():
     ap.add_argument("--dedup_radius", type=int, default=1)
     ap.add_argument("--bundle_url", type=str, default=None, help="Optional artifacts bundle URL")
     ap.add_argument("--model_url", type=str, default=None, help="Optional reranker model URL")
+    ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes")
+    ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
+    ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
+    ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
     args = ap.parse_args()
 
     subs_dir = Path("submissions")
@@ -87,6 +99,10 @@ def main():
             dedup_radius=args.dedup_radius,
             bundle_url=args.bundle_url,
             model_url=args.model_url,
+            default_clip=args.default_clip,
+            experimental=args.experimental,
+            exp_model=args.exp_model,
+            exp_pretrained=args.exp_pretrained,
         )
         n_ok += 1
 
@@ -95,4 +111,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

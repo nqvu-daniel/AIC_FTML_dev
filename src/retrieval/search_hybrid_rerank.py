@@ -31,10 +31,33 @@ def rrf_fuse(rank_lists, k=60):
             scores[gid] = scores.get(gid, 0.0) + 1.0 / (k + r + 1)
     return scores
 
-def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400):
+def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400, use_default_clip=False, experimental=False, exp_model=None, exp_pretrained=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, _, _ = open_clip.create_model_and_transforms(config.MODEL_NAME, pretrained=config.MODEL_PRETRAINED, device=device)
-    tokenizer = open_clip.get_tokenizer(config.MODEL_NAME)
+    if use_default_clip:
+        model_name = getattr(config, "DEFAULT_CLIP_MODEL", "ViT-B-32")
+        pretrained = getattr(config, "DEFAULT_CLIP_PRETRAINED", "openai")
+    elif experimental:
+        preset_key = (exp_model or '').lower() if exp_model else None
+        picked = None
+        if preset_key and preset_key in getattr(config, 'EXPERIMENTAL_PRESETS', {}):
+            picked = config.EXPERIMENTAL_PRESETS[preset_key]
+        elif preset_key:
+            model_name = exp_model
+            pretrained = exp_pretrained or getattr(config, 'MODEL_PRETRAINED', 'openai')
+        else:
+            for key in getattr(config, 'EXPERIMENTAL_FALLBACK_ORDER', []):
+                if key in config.EXPERIMENTAL_PRESETS:
+                    picked = config.EXPERIMENTAL_PRESETS[key]
+                    break
+        if picked:
+            model_name, pretrained = picked
+        if exp_pretrained:
+            pretrained = exp_pretrained
+    else:
+        model_name = config.MODEL_NAME
+        pretrained = config.MODEL_PRETRAINED
+    model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained, device=device)
+    tokenizer = open_clip.get_tokenizer(model_name)
     qv = encode_text(model, tokenizer, device, query)
     D, I = index.search(qv, top_dense)
     dense_idx, dense_scores = I[0], D[0]
@@ -104,6 +127,10 @@ def main():
     ap.add_argument("--bm25_top", type=int, default=400)
     ap.add_argument("--dedup_radius", type=int, default=1)
     ap.add_argument("--model_path", type=Path, default=Path("./artifacts/reranker.joblib"))
+    ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes")
+    ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
+    ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
+    ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
     args = ap.parse_args()
 
     mapping = from_parquet(args.index_dir / "mapping.parquet").reset_index(drop=True)
@@ -122,7 +149,15 @@ def main():
     bm25 = BM25Okapi(tokens_list)
 
     # gather candidates & features
-    feats = collect_candidates(args.query, mapping, index, bm25, tokens_list, raw_docs, top_dense=args.dense_top, top_bm25=args.bm25_top)
+    feats = collect_candidates(
+        args.query, mapping, index, bm25, tokens_list, raw_docs,
+        top_dense=args.dense_top,
+        top_bm25=args.bm25_top,
+        use_default_clip=args.default_clip,
+        experimental=args.experimental,
+        exp_model=args.exp_model,
+        exp_pretrained=args.exp_pretrained,
+    )
     # try learned model
     model = None
     if args.model_path.exists():

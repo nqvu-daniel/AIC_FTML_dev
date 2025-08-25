@@ -35,6 +35,10 @@ def main():
     ap.add_argument("--use_precomputed", action="store_true", default=True, help="Use features/*.npy if present (default: True)")
     ap.add_argument("--no_precomputed", action="store_true", help="Force live computation, ignore precomputed features")
     ap.add_argument("--flat", action="store_true", help="Use exact IndexFlatIP instead of HNSW")
+    ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP model (512D, compatible with precomputed features)")
+    ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
+    ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
+    ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
     args = ap.parse_args()
 
     root = args.dataset_root
@@ -42,12 +46,45 @@ def main():
     ensure_dir(ART)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, _, preprocess = open_clip.create_model_and_transforms(config.MODEL_NAME, pretrained=config.MODEL_PRETRAINED, device=device)
+    
+    # Choose model based on flags
+    if hasattr(args, 'default_clip') and args.default_clip:
+        model_name = config.DEFAULT_CLIP_MODEL
+        model_pretrained = config.DEFAULT_CLIP_PRETRAINED
+        print(f"Using default CLIP model: {model_name} ({model_pretrained})")
+    elif getattr(args, 'experimental', False):
+        # Experimental path: pick from preset or fallback order
+        preset_key = (args.exp_model or '').lower() if args.exp_model else None
+        picked = None
+        if preset_key and preset_key in getattr(config, 'EXPERIMENTAL_PRESETS', {}):
+            picked = config.EXPERIMENTAL_PRESETS[preset_key]
+        elif preset_key and preset_key not in getattr(config, 'EXPERIMENTAL_PRESETS', {}):
+            # Treat exp-model as raw model name; use provided or default pretrained
+            model_name = args.exp_model
+            model_pretrained = args.exp_pretrained or getattr(config, 'MODEL_PRETRAINED', 'openai')
+            print(f"[EXPERIMENTAL] Using custom model: {model_name} ({model_pretrained})")
+        else:
+            # Try fallbacks in order
+            for key in getattr(config, 'EXPERIMENTAL_FALLBACK_ORDER', []):
+                if key in config.EXPERIMENTAL_PRESETS:
+                    picked = config.EXPERIMENTAL_PRESETS[key]
+                    print(f"[EXPERIMENTAL] Selected preset '{key}': {picked[0]} ({picked[1]})")
+                    break
+        if picked:
+            model_name, model_pretrained = picked
+        # Override pretrained if user supplied
+        if args.exp_pretrained and 'model_pretrained' in locals():
+            model_pretrained = args.exp_pretrained
+    else:
+        model_name = config.MODEL_NAME
+        model_pretrained = config.MODEL_PRETRAINED
+        print(f"Using configured model: {model_name} ({model_pretrained})")
+    
+    model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=model_pretrained, device=device)
     
     # Get model embedding dimension for compatibility checks
     model_dim = model.visual.output_dim
-    print(f"Model: {config.MODEL_NAME} ({config.MODEL_PRETRAINED})")
-    print(f"Model embedding dimension: {model_dim}")
+    print(f"Model: {model_name} ({model_pretrained}) | embedding dim: {model_dim}")
 
     all_vecs = []
     rows = []
@@ -127,7 +164,7 @@ def main():
                 if precomputed_dim != model_dim:
                     print(f"[ERROR] Precomputed feature dimension mismatch!")
                     print(f"  Precomputed: {precomputed_dim}D (from {feat_file})")
-                    print(f"  Model: {model_dim}D ({config.MODEL_NAME})")
+                    print(f"  Model: {model_dim}D ({model_name})")
                     print(f"  Falling back to live computation for {vid}")
                     vecs = embed_keyframes(model, preprocess, device, kf_paths)
                 else:

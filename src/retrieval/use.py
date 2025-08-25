@@ -53,14 +53,20 @@ def encode_text(model, tokenizer, device, text: str):
     return t
 
 
-def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400):
+def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400, use_default_clip=False):
     import open_clip
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if use_default_clip:
+        model_name = getattr(config, "DEFAULT_CLIP_MODEL", "ViT-B-32")
+        pretrained = getattr(config, "DEFAULT_CLIP_PRETRAINED", "openai")
+    else:
+        model_name = config.MODEL_NAME
+        pretrained = config.MODEL_PRETRAINED
     model, _, _ = open_clip.create_model_and_transforms(
-        config.MODEL_NAME, pretrained=config.MODEL_PRETRAINED, device=device
+        model_name, pretrained=pretrained, device=device
     )
-    tokenizer = open_clip.get_tokenizer(config.MODEL_NAME)
+    tokenizer = open_clip.get_tokenizer(model_name)
     qv = encode_text(model, tokenizer, device, query)
     D, I = index.search(qv, top_dense)
     dense_idx, dense_scores = I[0], D[0]
@@ -218,6 +224,10 @@ def main():
     )
     ap.add_argument("--query_id", type=str, default=None, help="Official query identifier to name file as submissions/{query_id}.csv")
     ap.add_argument("--task", type=str, choices=["kis", "vqa"], default="kis", help="Task format for CSV output")
+    ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes")
+    ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
+    ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
+    ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
     ap.add_argument("--answer", type=str, default=None, help="VQA: Answer text to include as third column")
     ap.add_argument("--model_path", type=Path, default=Path("./artifacts/reranker.joblib"))
     ap.add_argument("--model_url", type=str, default=None, help="Optional URL to download reranker if missing")
@@ -284,7 +294,13 @@ def main():
 
     # Collect features
     feats = collect_candidates(
-        args.query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400
+        args.query, mapping, index, bm25, tokens_list, raw_docs,
+        top_dense=400,
+        top_bm25=400,
+        use_default_clip=args.default_clip,
+        experimental=args.experimental,
+        exp_model=args.exp_model,
+        exp_pretrained=args.exp_pretrained,
     )
 
     # Load or download reranker

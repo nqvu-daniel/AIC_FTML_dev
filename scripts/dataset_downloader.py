@@ -103,157 +103,90 @@ def is_video_file(p: Path) -> bool:
 
 def looks_like_vid_folder(name: str) -> bool:
     # e.g., L21_V001 or L26_V012
-    result = bool(re.match(r"^L\d{2}[_-]V\d{3}$", name, re.IGNORECASE))
-    if result:
-        print(f"[DEBUG] Found video folder: {name}")
-    return result
+    return bool(re.match(r"^L\d{2}[_-]V\d{3}$", name, re.IGNORECASE))
 
 
 def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
     """
-    Sort extracted files into AIC 2025 dataset structure.
-    
-    Expected structures after extraction:
-    - Keyframes_L21/keyframes/L21_V001/*.jpg
-    - Videos_L21_a/L21_V001.mp4
-    - map-keyframes/L21_V001.csv
-    - media-info/L21_V001.json
-    - objects/L26_V361/155.json
-    - clip-features-32/L21_V001.npy
+    Sort extracted files into AIC 2025 dataset structure using bulk directory operations.
+    Much faster than checking individual files.
     """
-    vids_dir = dataset_root / "videos"
-    kf_dir = dataset_root / "keyframes"
-    feat_dir = dataset_root / "features"
-    # Create main directories only - specific dirs created as needed
-    for d in (vids_dir, kf_dir, feat_dir):
-        ensure_dir(d)
-
-    for root, _, files in os.walk(extracted_root):
-        root_path = Path(root)
-        for fn in files:
-            src = root_path / fn
-            name = src.name
-            lower = name.lower()
-
-            # Check path hierarchy for classification
-            path_str = str(src)
-            parent_names = [p.name.lower() for p in src.parents]
-            
-            # CLIP Features: L21_V001.npy files from clip-features hierarchy
-            if (src.suffix.lower() == ".npy" and "_V" in name and 
-                any("clip-features" in p for p in parent_names)):
-                dst = feat_dir / name
-                ensure_dir(dst.parent)
-                _move_if_needed(src, dst)
-                print(f"[DEBUG] Moved CLIP features: {name}")
-                continue
-
-            # Map-keyframe CSV files: create separate map_keyframes directory
-            if (src.suffix.lower() == ".csv" and "_V" in name and 
-                any("map-keyframes" in p for p in parent_names)):
-                map_kf_dir = dataset_root / "map_keyframes"
-                ensure_dir(map_kf_dir)
-                dst = map_kf_dir / name
-                _move_if_needed(src, dst)
-                print(f"[DEBUG] Moved map-keyframe CSV: {name}")
-                continue
-            
-            # Media-info JSON files: create separate media_info directory
-            if (src.suffix.lower() == ".json" and "_V" in name and 
-                any("media-info" in p for p in parent_names)):
-                media_info_dir = dataset_root / "media_info"
-                ensure_dir(media_info_dir)
-                dst = media_info_dir / name
-                _move_if_needed(src, dst)
-                print(f"[DEBUG] Moved media-info JSON: {name}")
-                continue
-
-            # Objects JSON: create separate objects directory with video subfolders
-            if (src.suffix.lower() == ".json" and 
-                any("objects" in p for p in parent_names) and 
-                not any("media-info" in p for p in parent_names)):
-                # Find video folder in parents (L26_V361, etc.)
-                vid = None
-                for p in src.parents:
-                    if looks_like_vid_folder(p.name):
-                        vid = p.name
-                        break
-                
-                if vid:
-                    objects_dir = dataset_root / "objects"
-                    dst = objects_dir / vid / name
-                    ensure_dir(dst.parent)
-                    _move_if_needed(src, dst)
-                    print(f"[DEBUG] Moved object detection JSON: {vid}/{name}")
-                    continue
-
-            # Videos: handle Videos_L21_a/L21_V001.mp4 structure
-            if is_video_file(src):
-                # Check if we're in a Videos_* folder hierarchy
-                video_folder_found = any(p.startswith(('videos_', 'Videos_')) for p in parent_names)
-                
-                if video_folder_found:
-                    dst = vids_dir / name
-                    _move_if_needed(src, dst)
-                    print(f"[DEBUG] Moved video: {name}")
-                else:
-                    # Fallback for videos not in Videos_* folders
-                    dst = vids_dir / name
-                    _move_if_needed(src, dst)
-                    print(f"[DEBUG] Moved video (fallback): {name}")
-                continue
-
-            # Keyframes Images: handle Keyframes_L21/keyframes/L21_V001/001.jpg structure
-            if src.suffix.lower() in {".jpg", ".jpeg", ".png"}:
-                # Check if we're in a keyframes hierarchy or path contains keyframes
-                is_keyframe = (any("keyframes" in p for p in parent_names) or 
-                              "keyframes" in path_str.lower())
-                
-                if is_keyframe:
-                    # Find video folder in parents (L21_V001, etc.)
-                    vid = None
-                    for p in src.parents:
-                        if looks_like_vid_folder(p.name):
-                            vid = p.name
-                            break
-                    
-                    if vid is None:
-                        # Fallback: try to infer from path structure
-                        match = re.search(r'(L\d{2}_V\d{3})', path_str)
-                        if match:
-                            vid = match.group(1)
-                    
-                    if vid:
-                        # Move to organized folder only
-                        dst = kf_dir / vid / name
-                        ensure_dir(dst.parent)
-                        _move_if_needed(src, dst)
-                        print(f"[DEBUG] Processed keyframe: {vid}/{name}")
-                    else:
-                        # Can't find video folder - put in misc
-                        dst = kf_dir / "_misc" / name
-                        ensure_dir(dst.parent)
-                        _move_if_needed(src, dst)
-                        print(f"[DEBUG] Moved orphan keyframe: {name}")
-                else:
-                    # Image not in keyframes hierarchy - put in misc
-                    misc_dir = dataset_root / "misc"
-                    ensure_dir(misc_dir)
-                    dst = misc_dir / name
-                    _move_if_needed(src, dst)
-                    print(f"[DEBUG] Moved non-keyframe image: {name}")
-                continue
-
-            # Other files - put in misc directory
-            print(f"[DEBUG] Unhandled file: {src}")
-            misc_dir = dataset_root / "misc"
-            ensure_dir(misc_dir)
-            dst = misc_dir / name
-            _move_if_needed(src, dst)
+    # Create target directories
+    ensure_dir(dataset_root / "videos")
+    ensure_dir(dataset_root / "keyframes") 
+    ensure_dir(dataset_root / "features")
+    ensure_dir(dataset_root / "map_keyframes")
+    ensure_dir(dataset_root / "media_info")
+    ensure_dir(dataset_root / "objects")
+    
+    # Find and bulk copy directory structures
+    for item in extracted_root.rglob("*"):
+        if not item.is_dir():
             continue
-
-    # Cleanup empty dirs in extracted_root
+            
+        item_name = item.name.lower()
+        
+        # Videos: Copy all Videos_* directories
+        if item_name.startswith("videos_"):
+            _copy_all_files(item, dataset_root / "videos", "*.mp4")
+            
+        # Keyframes: Copy from Keyframes_*/keyframes/ structure  
+        elif item_name == "keyframes" and any("keyframes_" in p.name.lower() for p in item.parents):
+            _copy_keyframe_structure(item, dataset_root / "keyframes")
+            
+        # Features: Copy from clip-features-* directories
+        elif "clip-features" in item_name:
+            _copy_all_files(item, dataset_root / "features", "*.npy")
+            
+        # Map keyframes: Copy from map-keyframes directories
+        elif "map-keyframes" in item_name:
+            _copy_all_files(item, dataset_root / "map_keyframes", "*.csv")
+            
+        # Media info: Copy from media-info directories  
+        elif "media-info" in item_name:
+            _copy_all_files(item, dataset_root / "media_info", "*.json")
+            
+        # Objects: Copy maintaining video subfolder structure
+        elif item_name == "objects":
+            _copy_objects_structure(item, dataset_root / "objects")
+    
+    # Cleanup
     _remove_empty_dirs(extracted_root)
+
+
+def _copy_all_files(src_dir: Path, dst_dir: Path, pattern: str = "*") -> None:
+    """Copy all files matching pattern from src to dst directory (flattened)"""
+    ensure_dir(dst_dir)
+    for file_path in src_dir.rglob(pattern):
+        if file_path.is_file():
+            dst = dst_dir / file_path.name
+            _move_if_needed(file_path, dst)
+
+
+def _copy_keyframe_structure(keyframes_dir: Path, dst_dir: Path) -> None:
+    """Copy keyframe directory structure maintaining video subfolders"""
+    ensure_dir(dst_dir)
+    for video_dir in keyframes_dir.iterdir():
+        if video_dir.is_dir() and looks_like_vid_folder(video_dir.name):
+            video_dst = dst_dir / video_dir.name
+            ensure_dir(video_dst)
+            for img_file in video_dir.iterdir():
+                if img_file.is_file() and img_file.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+                    dst = video_dst / img_file.name
+                    _move_if_needed(img_file, dst)
+
+
+def _copy_objects_structure(objects_dir: Path, dst_dir: Path) -> None:
+    """Copy objects directory structure maintaining video subfolders"""
+    ensure_dir(dst_dir)
+    for video_dir in objects_dir.iterdir():
+        if video_dir.is_dir() and looks_like_vid_folder(video_dir.name):
+            video_dst = dst_dir / video_dir.name
+            ensure_dir(video_dst)
+            for json_file in video_dir.iterdir():
+                if json_file.is_file() and json_file.suffix.lower() == ".json":
+                    dst = video_dst / json_file.name
+                    _move_if_needed(json_file, dst)
 
 
 def _remove_empty_dirs(root: Path) -> None:

@@ -9,8 +9,28 @@ import pandas as pd
 import torch
 from rank_bm25 import BM25Okapi
 
-import config
-from utils import from_parquet, load_faiss
+# Handle both local development and packaged pipeline imports
+import sys
+from pathlib import Path
+
+# Add current directory to path for packaged pipeline
+current_dir = Path(__file__).parent.parent.parent
+if str(current_dir) not in sys.path:
+    sys.path.insert(0, str(current_dir))
+
+try:
+    import config
+    from utils import from_parquet, load_faiss
+except ImportError:
+    # Try relative import for packaged pipeline
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        import config
+        from utils import from_parquet, load_faiss
+    except ImportError as e:
+        print(f"Error importing required modules: {e}")
+        print("Make sure config.py and utils.py are in the same directory as this script")
+        sys.exit(1)
 
 
 def simple_tokenize(text: str):

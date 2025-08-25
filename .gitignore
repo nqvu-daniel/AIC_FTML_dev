@@ -15,6 +15,7 @@ submissions/
 temp/
 downloads/
 _extracted_tmp/
+tmp_download/
 videos/
 keyframes/
 keyframes_intelligent/

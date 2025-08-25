@@ -209,12 +209,15 @@ class AdvancedFrameSampler:
         else:  # Large video - sample every N frames initially
             step = max(1, int(fps / 4))  # Sample 4 times per second initially
         
-        for i in range(0, frame_count, step):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
-            ret, frame = cap.read()
-            if ret:
-                frames.append(frame)
-                frame_indices.append(i)
+        frame_positions = list(range(0, frame_count, step))
+        with tqdm(frame_positions, desc=f"Loading frames from {video_path.name}", unit="frame") as pbar:
+            for i in pbar:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+                ret, frame = cap.read()
+                if ret:
+                    frames.append(frame)
+                    frame_indices.append(i)
+                pbar.set_postfix({"loaded": len(frames), "pos": f"{i}/{frame_count}"})
         
         cap.release()
         
@@ -226,14 +229,16 @@ class AdvancedFrameSampler:
         # Score all frames
         importance_scores = []
         
-        for i, frame in enumerate(tqdm(frames, desc="Scoring frames")):
-            # Get context window
-            start_idx = max(0, i - window_size // 2)
-            end_idx = min(len(frames), i + window_size // 2 + 1)
-            context_frames = frames[start_idx:i] + frames[i+1:end_idx]
-            
-            score, detailed_scores = self.score_frame_importance(frame, context_frames, i)
-            importance_scores.append((frame_indices[i], score, detailed_scores))
+        with tqdm(enumerate(frames), desc="Scoring frames", total=len(frames), unit="frame") as pbar:
+            for i, frame in pbar:
+                # Get context window
+                start_idx = max(0, i - window_size // 2)
+                end_idx = min(len(frames), i + window_size // 2 + 1)
+                context_frames = frames[start_idx:i] + frames[i+1:end_idx]
+                
+                score, detailed_scores = self.score_frame_importance(frame, context_frames, i)
+                importance_scores.append((frame_indices[i], score, detailed_scores))
+                pbar.set_postfix({"score": f"{score:.3f}"})
         
         # Sort by importance
         importance_scores.sort(key=lambda x: x[1], reverse=True)
@@ -290,9 +295,12 @@ class AdvancedFrameSampler:
         print(f"Found {len(video_files)} videos in collection {video_id}")
         
         success_count = 0
-        for video_file in video_files:
-            if self.process_single_video(video_file):
-                success_count += 1
+        with tqdm(video_files, desc=f"Processing {video_id}", unit="video") as pbar:
+            for video_file in pbar:
+                pbar.set_postfix({"file": video_file.stem})
+                if self.process_single_video(video_file):
+                    success_count += 1
+                pbar.set_postfix({"file": video_file.stem, "success": f"{success_count}/{len(video_files)}"})
                 
         print(f"Successfully processed {success_count}/{len(video_files)} videos in collection {video_id}")
         return success_count > 0
@@ -325,25 +333,27 @@ class AdvancedFrameSampler:
         cap = cv2.VideoCapture(str(video_path))
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         
-        for i, (frame_idx, importance_score) in enumerate(selected_frames):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-            if not ret:
-                print(f"WARNING: Could not read frame {frame_idx}")
-                continue
+        with tqdm(enumerate(selected_frames), desc=f"Saving keyframes for {video_id}", total=len(selected_frames), unit="frame") as pbar:
+            for i, (frame_idx, importance_score) in pbar:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    print(f"WARNING: Could not read frame {frame_idx}")
+                    continue
+                    
+                frame_filename = f"{i+1:03d}.png"
+                frame_path = output_dir / frame_filename
+                cv2.imwrite(str(frame_path), frame)
                 
-            frame_filename = f"{i+1:03d}.png"
-            frame_path = output_dir / frame_filename
-            cv2.imwrite(str(frame_path), frame)
-            
-            pts_time = (frame_idx / fps) if fps else 0.0
-            mapping_data.append({
-                'n': i + 1,
-                'pts_time': pts_time,
-                'fps': fps,
-                'frame_idx': frame_idx,
-                'importance_score': importance_score
-            })
+                pts_time = (frame_idx / fps) if fps else 0.0
+                mapping_data.append({
+                    'n': i + 1,
+                    'pts_time': pts_time,
+                    'fps': fps,
+                    'frame_idx': frame_idx,
+                    'importance_score': importance_score
+                })
+                pbar.set_postfix({"frame": frame_filename, "score": f"{importance_score:.3f}"})
         
         cap.release()
         
@@ -374,9 +384,12 @@ def main():
     )
     
     success_count = 0
-    for video_id in args.videos:
-        if sampler.process_video(video_id):
-            success_count += 1
+    with tqdm(args.videos, desc="Processing video collections", unit="collection") as pbar:
+        for video_id in pbar:
+            pbar.set_postfix({"collection": video_id})
+            if sampler.process_video(video_id):
+                success_count += 1
+            pbar.set_postfix({"collection": video_id, "success": f"{success_count}/{len(args.videos)}"})
     
     print(f"\nCompleted processing {success_count}/{len(args.videos)} video collections")
     

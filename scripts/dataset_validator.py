@@ -92,13 +92,13 @@ class DatasetValidator:
         elif "clip-features" in name:
             return self.dataset_root / "features"
         elif "media-info" in name:
-            return self.dataset_root / "meta"
+            return self.dataset_root / "media_info"
         elif "objects" in name:
-            return self.dataset_root / "meta" / "objects"
+            return self.dataset_root / "objects"
         elif "map-keyframes" in name:
-            return self.dataset_root / "meta"
+            return self.dataset_root / "map_keyframes"
         else:
-            return self.dataset_root / "extracted" / zip_file.stem
+            return self.dataset_root / "misc" / zip_file.stem
     
     def _validate_structure(self, auto_fix=True):
         """Validate and create directory structure"""
@@ -107,9 +107,12 @@ class DatasetValidator:
         required_dirs = [
             "videos",
             "keyframes", 
-            "meta",
-            "meta/objects",
+            "keyframes_all",
             "keyframes_intelligent",
+            "map_keyframes",
+            "media_info",
+            "objects",
+            "features",
             "artifacts"
         ]
         
@@ -218,40 +221,44 @@ class DatasetValidator:
             self.issues.append("Meta directory not found")
             return
         
-        # Check for mapping files
-        mapping_files = list(meta_dir.glob("*.map_keyframe.csv"))
-        if not mapping_files:
-            self.issues.append("No keyframe mapping files found")
-        else:
-            # Validate mapping file structure
-            for mapping_file in mapping_files:
-                try:
-                    df = pd.read_csv(mapping_file)
-                    required_columns = ['n', 'pts_time', 'fps', 'frame_idx']
-                    
-                    missing_cols = [col for col in required_columns if col not in df.columns]
-                    if missing_cols:
-                        self.issues.append(f"Mapping file {mapping_file.name} missing columns: {missing_cols}")
+        # Check for mapping files in map_keyframes directory
+        map_keyframes_dir = self.dataset_root / "map_keyframes"
+        if map_keyframes_dir.exists():
+            mapping_files = list(map_keyframes_dir.glob("*.csv"))
+            if not mapping_files:
+                self.issues.append("No keyframe mapping files found")
+            else:
+                # Validate mapping file structure
+                for mapping_file in mapping_files:
+                    try:
+                        df = pd.read_csv(mapping_file)
+                        required_columns = ['n', 'pts_time', 'fps', 'frame_idx']
                         
-                except Exception as e:
-                    self.issues.append(f"Error reading mapping file {mapping_file.name}: {e}")
+                        missing_cols = [col for col in required_columns if col not in df.columns]
+                        if missing_cols:
+                            self.issues.append(f"Mapping file {mapping_file.name} missing columns: {missing_cols}")
+                            
+                    except Exception as e:
+                        self.issues.append(f"Error reading mapping file {mapping_file.name}: {e}")
         
-        # Check for media info files
-        info_files = list(meta_dir.glob("*.media_info.json"))
-        if info_files:
-            logger.info(f"Found {len(info_files)} media info files")
-            
-            # Validate JSON structure
-            for info_file in info_files:
-                try:
-                    with open(info_file) as f:
-                        data = json.load(f)
-                    # Check if it's valid JSON
-                except Exception as e:
-                    self.issues.append(f"Invalid media info file {info_file.name}: {e}")
+        # Check for media info files in media_info directory
+        media_info_dir = self.dataset_root / "media_info"
+        if media_info_dir.exists():
+            info_files = list(media_info_dir.glob("*.json"))
+            if info_files:
+                logger.info(f"Found {len(info_files)} media info files")
+                
+                # Validate JSON structure
+                for info_file in info_files:
+                    try:
+                        with open(info_file) as f:
+                            data = json.load(f)
+                        # Check if it's valid JSON
+                    except Exception as e:
+                        self.issues.append(f"Invalid media info file {info_file.name}: {e}")
         
         # Check objects directory
-        objects_dir = meta_dir / "objects"
+        objects_dir = self.dataset_root / "objects"
         if objects_dir.exists():
             object_subdirs = [d for d in objects_dir.iterdir() if d.is_dir()]
             logger.info(f"Found {len(object_subdirs)} object detection collections")
@@ -319,11 +326,14 @@ class DatasetValidator:
             logger.info(f"Total keyframes: {total_keyframes}")
         
         # Count metadata files
-        meta_dir = self.dataset_root / "meta"
-        if meta_dir.exists():
-            mapping_count = len(list(meta_dir.glob("*.map_keyframe.csv")))
-            info_count = len(list(meta_dir.glob("*.media_info.json")))
+        map_keyframes_dir = self.dataset_root / "map_keyframes"
+        if map_keyframes_dir.exists():
+            mapping_count = len(list(map_keyframes_dir.glob("*.csv")))
             logger.info(f"Mapping files: {mapping_count}")
+        
+        media_info_dir = self.dataset_root / "media_info"
+        if media_info_dir.exists():
+            info_count = len(list(media_info_dir.glob("*.json")))
             logger.info(f"Media info files: {info_count}")
         
         # Check for features

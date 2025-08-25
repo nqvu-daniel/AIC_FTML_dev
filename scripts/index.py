@@ -47,7 +47,7 @@ def main():
     rows = []
 
     for vid in args.videos:
-        map_csv = root / "meta" / f"{vid}.map_keyframe.csv"
+        map_csv = root / "map_keyframes" / f"{vid}.csv"
         if not map_csv.exists():
             raise FileNotFoundError(map_csv)
         df = pd.read_csv(map_csv)
@@ -60,16 +60,26 @@ def main():
         for _, row in df.iterrows():
             n = int(row["n"])
             
-            # Try intelligent keyframes first, then competition keyframes
-            intelligent_path = root / "keyframes_intelligent" / vid / f"{n:03d}.png"
-            competition_path = root / "keyframes" / vid / f"{n:03d}.png"
+            # Try intelligent keyframes first, then competition keyframes (support multiple formats)
+            intelligent_path = None
+            competition_path = None
             
-            if intelligent_path.exists():
+            for ext in ['.png', '.jpg', '.jpeg']:
+                intelligent_candidate = root / "keyframes_intelligent" / vid / f"{n:03d}{ext}"
+                competition_candidate = root / "keyframes" / vid / f"{n:03d}{ext}"
+                
+                if intelligent_candidate.exists():
+                    intelligent_path = intelligent_candidate
+                    break
+                elif competition_candidate.exists():
+                    competition_path = competition_candidate
+            
+            if intelligent_path:
                 kf_paths.append(intelligent_path)
-            elif competition_path.exists():
+            elif competition_path:
                 kf_paths.append(competition_path)
             else:
-                raise FileNotFoundError(f"Keyframe {n:03d}.png not found for {vid}")
+                raise FileNotFoundError(f"Keyframe {n:03d}.[png|jpg|jpeg] not found for {vid}")
             
             # Get importance score if available
             importance = row.get("importance_score", 1.0)

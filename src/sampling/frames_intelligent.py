@@ -302,7 +302,7 @@ class AdvancedFrameSampler:
         cap.release()
         
         # Save mapping file
-        mapping_file = self.dataset_root / "meta" / f"{video_id}.map_keyframe.csv"
+        mapping_file = self.dataset_root / "map_keyframes" / f"{video_id}.csv"
         mapping_file.parent.mkdir(exist_ok=True)
         
         df = pd.DataFrame(mapping_data)

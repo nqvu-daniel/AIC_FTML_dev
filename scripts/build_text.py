@@ -11,8 +11,8 @@ def simple_tokenize(text: str):
     toks = [t for t in text.split() if len(t) > 1]
     return toks
 
-def load_media_info(meta_dir: Path, vid: str):
-    f = meta_dir / f"{vid}.media_info.json"
+def load_media_info(dataset_root: Path, vid: str):
+    f = dataset_root / "media_info" / f"{vid}.json"
     title = desc = ""
     keywords = []
     if f.exists():
@@ -49,14 +49,13 @@ def main():
     ap.add_argument("--artifact_dir", type=Path, default=Path("./artifacts"))
     args = ap.parse_args()
 
-    meta_dir = args.dataset_root / "meta"
-    obj_dir = meta_dir / "objects"
+    obj_dir = args.dataset_root / "objects"
     out_jsonl = args.artifact_dir / "text_corpus.jsonl"
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
 
     rows = []
     for vid in tqdm(args.videos, desc="Building text corpus"):
-        title, desc, kw = load_media_info(meta_dir, vid)
+        title, desc, kw = load_media_info(args.dataset_root, vid)
         # try to load mapping parquet created by index.py
         # if not present yet, fall back to CSV map to get list of n
         map_parquet = args.artifact_dir / "mapping.parquet"
@@ -66,7 +65,7 @@ def main():
             df = df[df["video_id"] == vid].copy()
             key_seq = list(zip(df["global_idx"], df["n"]))
         else:
-            map_csv = meta_dir / f"{vid}.map_keyframe.csv"
+            map_csv = args.dataset_root / "map_keyframes" / f"{vid}.csv"
             if not map_csv.exists():
                 raise FileNotFoundError(map_csv)
             import pandas as pd

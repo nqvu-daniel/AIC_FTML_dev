@@ -114,7 +114,7 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
     Sort extracted files into AIC 2025 dataset structure.
     
     Expected structures after extraction:
-    - Keyframes_L21/keyframes/L21_V001/*.png
+    - Keyframes_L21/keyframes/L21_V001/*.jpg
     - Videos_L21_a/L21_V001.mp4
     - map-keyframes/L21_V001.csv
     - media-info/L21_V001.json
@@ -123,10 +123,9 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
     """
     vids_dir = dataset_root / "videos"
     kf_dir = dataset_root / "keyframes"
-    meta_dir = dataset_root / "meta"
-    obj_dir = meta_dir / "objects"
     feat_dir = dataset_root / "features"
-    for d in (vids_dir, kf_dir, meta_dir, obj_dir, feat_dir):
+    # Create main directories only - specific dirs created as needed
+    for d in (vids_dir, kf_dir, feat_dir):
         ensure_dir(d)
 
     for root, _, files in os.walk(extracted_root):
@@ -149,23 +148,27 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                 print(f"[DEBUG] Moved CLIP features: {name}")
                 continue
 
-            # Meta: map_keyframe CSV files from map-keyframes hierarchy
+            # Map-keyframe CSV files: create separate map_keyframes directory
             if (src.suffix.lower() == ".csv" and "_V" in name and 
                 any("map-keyframes" in p for p in parent_names)):
-                dst = meta_dir / name
+                map_kf_dir = dataset_root / "map_keyframes"
+                ensure_dir(map_kf_dir)
+                dst = map_kf_dir / name
                 _move_if_needed(src, dst)
                 print(f"[DEBUG] Moved map-keyframe CSV: {name}")
                 continue
             
-            # Meta: media_info JSON files from media-info hierarchy
+            # Media-info JSON files: create separate media_info directory
             if (src.suffix.lower() == ".json" and "_V" in name and 
                 any("media-info" in p for p in parent_names)):
-                dst = meta_dir / name
+                media_info_dir = dataset_root / "media_info"
+                ensure_dir(media_info_dir)
+                dst = media_info_dir / name
                 _move_if_needed(src, dst)
                 print(f"[DEBUG] Moved media-info JSON: {name}")
                 continue
 
-            # Objects JSON: files from objects/ hierarchy (but not media-info)
+            # Objects JSON: create separate objects directory with video subfolders
             if (src.suffix.lower() == ".json" and 
                 any("objects" in p for p in parent_names) and 
                 not any("media-info" in p for p in parent_names)):
@@ -177,7 +180,8 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                         break
                 
                 if vid:
-                    dst = obj_dir / vid / name
+                    objects_dir = dataset_root / "objects"
+                    dst = objects_dir / vid / name
                     ensure_dir(dst.parent)
                     _move_if_needed(src, dst)
                     print(f"[DEBUG] Moved object detection JSON: {vid}/{name}")
@@ -199,11 +203,8 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                     print(f"[DEBUG] Moved video (fallback): {name}")
                 continue
 
-            # Keyframes PNG: handle Keyframes_L21/keyframes/L21_V001/001.png structure
-            if src.suffix.lower() == ".png":
-                print(f"[DEBUG] Processing PNG: {src}")
-                print(f"[DEBUG] Parent names: {parent_names}")
-                
+            # Keyframes Images: handle Keyframes_L21/keyframes/L21_V001/001.jpg structure
+            if src.suffix.lower() in {".jpg", ".jpeg", ".png"}:
                 # Check if we're in a keyframes hierarchy or path contains keyframes
                 is_keyframe = (any("keyframes" in p for p in parent_names) or 
                               "keyframes" in path_str.lower())
@@ -214,7 +215,6 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                     for p in src.parents:
                         if looks_like_vid_folder(p.name):
                             vid = p.name
-                            print(f"[DEBUG] Found video folder: {vid}")
                             break
                     
                     if vid is None:
@@ -222,7 +222,6 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                         match = re.search(r'(L\d{2}_V\d{3})', path_str)
                         if match:
                             vid = match.group(1)
-                            print(f"[DEBUG] Inferred video folder from path: {vid}")
                     
                     if vid:
                         # First copy to outer folder BEFORE moving
@@ -230,34 +229,34 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                         outer_dst = outer_kf_dir / vid / name
                         ensure_dir(outer_dst.parent)
                         shutil.copy2(str(src), str(outer_dst))
-                        print(f"[DEBUG] Copied keyframe to outer folder: {vid}/{name}")
                         
                         # Then move to organized folder
                         dst = kf_dir / vid / name
                         ensure_dir(dst.parent)
                         _move_if_needed(src, dst)
-                        print(f"[DEBUG] Moved keyframe: {vid}/{name}")
+                        print(f"[DEBUG] Processed keyframe: {vid}/{name}")
                     else:
-                        print(f"[DEBUG] Could not find video folder for keyframe: {src}")
-                        print(f"[DEBUG] Full path: {path_str}")
-                        print(f"[DEBUG] Parent folders: {[p.name for p in src.parents]}")
+                        # Can't find video folder - put in misc
                         dst = kf_dir / "_misc" / name
                         ensure_dir(dst.parent)
                         _move_if_needed(src, dst)
+                        print(f"[DEBUG] Moved orphan keyframe: {name}")
                 else:
-                    # PNG not in keyframes hierarchy - might be other PNG files
-                    print(f"[DEBUG] Non-keyframe PNG: {src}")
-                    dst = meta_dir / "_other_pngs" / name
-                    ensure_dir(dst.parent)
+                    # Image not in keyframes hierarchy - put in misc
+                    misc_dir = dataset_root / "misc"
+                    ensure_dir(misc_dir)
+                    dst = misc_dir / name
                     _move_if_needed(src, dst)
-                    print(f"[DEBUG] Moved non-keyframe PNG: {name}")
+                    print(f"[DEBUG] Moved non-keyframe image: {name}")
                 continue
 
-            # Other CSVs might belong to meta (keep them for debugging)
-            if src.suffix.lower() == ".csv" and not lower.endswith(".map_keyframe.csv"):
-                dst = meta_dir / name
-                _move_if_needed(src, dst)
-                continue
+            # Other files - put in misc directory
+            print(f"[DEBUG] Unhandled file: {src}")
+            misc_dir = dataset_root / "misc"
+            ensure_dir(misc_dir)
+            dst = misc_dir / name
+            _move_if_needed(src, dst)
+            continue
 
     # Cleanup empty dirs in extracted_root
     _remove_empty_dirs(extracted_root)
@@ -363,10 +362,13 @@ def main():
     print("[OK] Dataset prepared at:", root)
     print("Layout:")
     print(" - videos/ (mp4)")
-    print(" - keyframes/<VID>/*.png (organized by video)")
-    print(" - keyframes_all/<VID>/*.png (copy for general usage)")
-    print(" - meta/*.map_keyframe.csv, *.media_info.json, objects/<VID>/*.json")
-    print(" - features/*.npy (optional)")
+    print(" - keyframes/<VID>/*.{jpg,jpeg,png} (organized by video)")
+    print(" - keyframes_all/<VID>/*.{jpg,jpeg,png} (copy for general usage)")
+    print(" - map_keyframes/*.csv (keyframe mapping files)")
+    print(" - media_info/*.json (video metadata)")
+    print(" - objects/<VID>/*.json (object detection per video)")
+    print(" - features/*.npy (precomputed CLIP features)")
+    print(" - misc/ (other unhandled files)")
     return 0
 
 

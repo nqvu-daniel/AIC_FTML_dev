@@ -45,7 +45,7 @@ def collect_objects(objects_dir: Path, vid: str, n: int):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset_root", type=Path, required=True)
-    ap.add_argument("--videos", nargs="+", required=True)
+    ap.add_argument("--videos", nargs="+", required=True, help="Video collections, e.g., L21 L22, or specific videos L21_V001 L22_V003")
     ap.add_argument("--artifact_dir", type=Path, default=Path("./artifacts"))
     args = ap.parse_args()
 
@@ -53,8 +53,29 @@ def main():
     out_jsonl = args.artifact_dir / "text_corpus.jsonl"
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
 
+    # Expand video collections (L21 -> all L21_V* videos)
+    all_video_ids = []
+    for vid_arg in args.videos:
+        if re.match(r'^L\d{2}$', vid_arg):  # Collection ID like L21
+            # Find all videos in this collection
+            map_keyframes_dir = args.dataset_root / "map_keyframes"
+            if map_keyframes_dir.exists():
+                collection_videos = sorted([f.stem for f in map_keyframes_dir.glob(f"{vid_arg}_V*.csv")])
+                if collection_videos:
+                    all_video_ids.extend(collection_videos)
+                    print(f"Found {len(collection_videos)} videos in collection {vid_arg}")
+                else:
+                    print(f"Warning: No videos found for collection {vid_arg}")
+            else:
+                raise FileNotFoundError(f"map_keyframes directory not found: {map_keyframes_dir}")
+        else:  # Specific video ID like L21_V001
+            all_video_ids.append(vid_arg)
+    
+    if not all_video_ids:
+        raise ValueError("No video IDs found to process")
+
     rows = []
-    for vid in tqdm(args.videos, desc="Building text corpus"):
+    for vid in tqdm(all_video_ids, desc="Building text corpus"):
         title, desc, kw = load_media_info(args.dataset_root, vid)
         # try to load mapping parquet created by index.py
         # if not present yet, fall back to CSV map to get list of n

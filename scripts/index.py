@@ -1,4 +1,4 @@
-import argparse, os, json, numpy as np, pandas as pd, torch, sys
+import argparse, os, json, numpy as np, pandas as pd, torch, sys, re
 from pathlib import Path
 from tqdm import tqdm
 import open_clip
@@ -31,8 +31,9 @@ def embed_keyframes(model, preprocess, device, kf_paths):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset_root", type=Path, required=True)
-    ap.add_argument("--videos", nargs="+", required=True, help="Video IDs to index, e.g., L21_V001 L22_V003")
-    ap.add_argument("--use_precomputed", action="store_true", help="Use features/*.npy if present (clip-level), else compute from keyframes")
+    ap.add_argument("--videos", nargs="+", required=True, help="Video collections to index, e.g., L21 L22, or specific videos L21_V001 L22_V003")
+    ap.add_argument("--use_precomputed", action="store_true", default=True, help="Use features/*.npy if present (default: True)")
+    ap.add_argument("--no_precomputed", action="store_true", help="Force live computation, ignore precomputed features")
     ap.add_argument("--flat", action="store_true", help="Use exact IndexFlatIP instead of HNSW")
     args = ap.parse_args()
 
@@ -42,11 +43,39 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, _, preprocess = open_clip.create_model_and_transforms(config.MODEL_NAME, pretrained=config.MODEL_PRETRAINED, device=device)
+    
+    # Get model embedding dimension for compatibility checks
+    model_dim = model.visual.output_dim
+    print(f"Model: {config.MODEL_NAME} ({config.MODEL_PRETRAINED})")
+    print(f"Model embedding dimension: {model_dim}")
 
     all_vecs = []
     rows = []
+    
+    # Expand video collections (L21 -> all L21_V* videos)
+    all_video_ids = []
+    for vid_arg in args.videos:
+        if re.match(r'^L\d{2}$', vid_arg):  # Collection ID like L21
+            # Find all videos in this collection
+            map_keyframes_dir = root / "map_keyframes"
+            if map_keyframes_dir.exists():
+                collection_videos = sorted([f.stem for f in map_keyframes_dir.glob(f"{vid_arg}_V*.csv")])
+                if collection_videos:
+                    all_video_ids.extend(collection_videos)
+                    print(f"Found {len(collection_videos)} videos in collection {vid_arg}")
+                else:
+                    print(f"Warning: No videos found for collection {vid_arg}")
+            else:
+                raise FileNotFoundError(f"map_keyframes directory not found: {map_keyframes_dir}")
+        else:  # Specific video ID like L21_V001
+            all_video_ids.append(vid_arg)
+    
+    if not all_video_ids:
+        raise ValueError("No video IDs found to process")
+    
+    print(f"Processing {len(all_video_ids)} videos: {all_video_ids[:5]}{'...' if len(all_video_ids) > 5 else ''}")
 
-    for vid in args.videos:
+    for vid in all_video_ids:
         map_csv = root / "map_keyframes" / f"{vid}.csv"
         if not map_csv.exists():
             raise FileNotFoundError(map_csv)
@@ -85,20 +114,33 @@ def main():
             importance = row.get("importance_score", 1.0)
             importance_scores.append(float(importance))
 
-        if args.use_precomputed:
+        if args.use_precomputed and not args.no_precomputed:
             feat_file = root / "features" / f"{vid}.npy"
             if not feat_file.exists():
                 print(f"[WARN] {feat_file} not found; falling back to image embeddings")
                 vecs = embed_keyframes(model, preprocess, device, kf_paths)
             else:
                 vecs = np.load(feat_file)  # shape [T, D]; we assume T==len(kf_paths)
-                if vecs.shape[0] != len(kf_paths):
-                    print(f"[WARN] feature count {vecs.shape[0]} != keyframes {len(kf_paths)}; truncating to min")
-                    m = min(vecs.shape[0], len(kf_paths))
-                    vecs = vecs[:m]
-                    df = df.iloc[:m]
-                    kf_paths = kf_paths[:m]
+                
+                # Model compatibility check
+                precomputed_dim = vecs.shape[1]
+                if precomputed_dim != model_dim:
+                    print(f"[ERROR] Precomputed feature dimension mismatch!")
+                    print(f"  Precomputed: {precomputed_dim}D (from {feat_file})")
+                    print(f"  Model: {model_dim}D ({config.MODEL_NAME})")
+                    print(f"  Falling back to live computation for {vid}")
+                    vecs = embed_keyframes(model, preprocess, device, kf_paths)
+                else:
+                    print(f"[OK] Using precomputed features for {vid}: {vecs.shape} ({vecs.dtype})")
+                    # Handle keyframe count mismatch
+                    if vecs.shape[0] != len(kf_paths):
+                        print(f"[WARN] Feature count {vecs.shape[0]} != keyframes {len(kf_paths)}; truncating to min")
+                        m = min(vecs.shape[0], len(kf_paths))
+                        vecs = vecs[:m]
+                        df = df.iloc[:m]
+                        kf_paths = kf_paths[:m]
         else:
+            print(f"[COMPUTE] Generating embeddings for {vid} using {config.MODEL_NAME}")
             vecs = embed_keyframes(model, preprocess, device, kf_paths)
 
         vecs = normalize_rows(vecs)

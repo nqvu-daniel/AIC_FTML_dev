@@ -201,8 +201,12 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
 
             # Keyframes PNG: handle Keyframes_L21/keyframes/L21_V001/001.png structure
             if src.suffix.lower() == ".png":
-                # Check if we're in a keyframes hierarchy
-                is_keyframe = any("keyframes" in p for p in parent_names)
+                print(f"[DEBUG] Processing PNG: {src}")
+                print(f"[DEBUG] Parent names: {parent_names}")
+                
+                # Check if we're in a keyframes hierarchy or path contains keyframes
+                is_keyframe = (any("keyframes" in p for p in parent_names) or 
+                              "keyframes" in path_str.lower())
                 
                 if is_keyframe:
                     # Find video folder in parents (L21_V001, etc.)
@@ -210,6 +214,7 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                     for p in src.parents:
                         if looks_like_vid_folder(p.name):
                             vid = p.name
+                            print(f"[DEBUG] Found video folder: {vid}")
                             break
                     
                     if vid is None:
@@ -220,26 +225,28 @@ def sort_extracted_to_layout(extracted_root: Path, dataset_root: Path) -> None:
                             print(f"[DEBUG] Inferred video folder from path: {vid}")
                     
                     if vid:
+                        # First copy to outer folder BEFORE moving
+                        outer_kf_dir = dataset_root / "keyframes_all"
+                        outer_dst = outer_kf_dir / vid / name
+                        ensure_dir(outer_dst.parent)
+                        shutil.copy2(str(src), str(outer_dst))
+                        print(f"[DEBUG] Copied keyframe to outer folder: {vid}/{name}")
+                        
+                        # Then move to organized folder
                         dst = kf_dir / vid / name
                         ensure_dir(dst.parent)
                         _move_if_needed(src, dst)
                         print(f"[DEBUG] Moved keyframe: {vid}/{name}")
-                        
-                        # Also copy to outer keyframes folder for general usage
-                        outer_kf_dir = dataset_root / "keyframes_all"
-                        outer_dst = outer_kf_dir / vid / name
-                        ensure_dir(outer_dst.parent)
-                        if not outer_dst.exists():
-                            shutil.copy2(str(dst), str(outer_dst))
-                            print(f"[DEBUG] Copied keyframe to outer folder: {vid}/{name}")
                     else:
                         print(f"[DEBUG] Could not find video folder for keyframe: {src}")
+                        print(f"[DEBUG] Full path: {path_str}")
                         print(f"[DEBUG] Parent folders: {[p.name for p in src.parents]}")
                         dst = kf_dir / "_misc" / name
                         ensure_dir(dst.parent)
                         _move_if_needed(src, dst)
                 else:
                     # PNG not in keyframes hierarchy - might be other PNG files
+                    print(f"[DEBUG] Non-keyframe PNG: {src}")
                     dst = meta_dir / "_other_pngs" / name
                     ensure_dir(dst.parent)
                     _move_if_needed(src, dst)

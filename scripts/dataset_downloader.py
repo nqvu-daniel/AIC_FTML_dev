@@ -80,6 +80,7 @@ def download(url: str, outfile: Path) -> None:
         total = int(r.headers.get("Content-Length", 0) or 0)
         read = 0
         chunk = 1 << 20
+        last_print_mb = 0
         tmp = outfile.with_suffix(outfile.suffix + ".part")
         with open(tmp, "wb") as f:
             while True:
@@ -89,8 +90,12 @@ def download(url: str, outfile: Path) -> None:
                 f.write(b)
                 read += len(b)
                 if total:
-                    pct = 100.0 * read / total
-                    print(f"\r  → {read/1e6:.1f}/{total/1e6:.1f} MB ({pct:.1f}%)", end="")
+                    current_mb = read / 1e6
+                    # Print progress every 10MB
+                    if current_mb - last_print_mb >= 10 or read == total:
+                        pct = 100.0 * read / total
+                        print(f"\r  → {read/1e6:.1f}/{total/1e6:.1f} MB ({pct:.1f}%)", end="")
+                        last_print_mb = current_mb
         if total:
             print()
         tmp.replace(outfile)

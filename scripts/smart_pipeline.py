@@ -6,16 +6,99 @@ Smart end-to-end pipeline with CLIP-guided frame sampling and indexing.
 import argparse
 import os
 import json
-import numpy as np
-import pandas as pd
-import torch
 import sys
 import re
 from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Conservative dependency handling - only install if missing and explicitly requested
+FORCE_INSTALL = os.getenv('AIC_FORCE_INSTALL', '').lower() in ('1', 'true', 'yes')
+
+def try_import_with_fallback():
+    """Try to import dependencies, only install if FORCE_INSTALL is set"""
+    
+    # First try - check what's missing
+    try:
+        import numpy as np
+        import pandas as pd  
+        import torch
+        from tqdm import tqdm
+        from PIL import Image
+        import faiss
+        import open_clip
+        return True, None  # All imports successful
+    except ImportError as e:
+        missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+        
+        if not FORCE_INSTALL:
+            print(f"Missing dependency: {missing_dep}")
+            print("To auto-install dependencies, set environment variable: AIC_FORCE_INSTALL=1")
+            print("Or install manually with: pip install -r requirements.txt")
+            return False, [missing_dep]
+        
+        # Auto-install mode - install all requirements at once
+        print(f"Missing dependency detected: {missing_dep}. Installing all requirements...")
+        
+        import subprocess
+        try:
+            # Install from requirements.txt if available
+            req_file = Path(__file__).parent.parent / "requirements.txt"
+            if req_file.exists():
+                subprocess.check_call([
+                    sys.executable, "-m", "pip", "install", "-r", str(req_file)
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print("Successfully installed requirements from requirements.txt")
+            else:
+                # Fallback to individual packages
+                packages = [
+                    "torch>=2.1", "torchvision>=0.16.0", "torchaudio>=2.1.0",
+                    "open-clip-torch>=2.24.0", "faiss-cpu>=1.7.4",
+                    "opencv-python-headless>=4.8.0", "Pillow>=10.0",
+                    "numpy>=1.24", "pandas>=2.0", "scipy>=1.11.0",
+                    "scikit-learn>=1.4", "tqdm>=4.66", "pyarrow>=14.0.0"
+                ]
+                for package in packages:
+                    subprocess.check_call([
+                        sys.executable, "-m", "pip", "install", package
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print("Successfully installed individual packages")
+            
+        except subprocess.CalledProcessError as install_error:
+            print(f"Failed to install dependencies: {install_error}")
+            return False, [missing_dep]
+        
+        # Try imports again after installation
+        try:
+            import numpy as np
+            import pandas as pd
+            import torch  
+            from tqdm import tqdm
+            from PIL import Image
+            import faiss
+            import open_clip
+            print("All dependencies successfully imported after installation!")
+            return True, None
+        except ImportError as e:
+            return False, [str(e)]
+
+# Try importing with conservative fallback
+success, errors = try_import_with_fallback()
+if not success:
+    print("Failed to import required dependencies:")
+    for error in errors or []:
+        print(f"  - {error}")
+    sys.exit(1)
+
+# Import successful, continue with regular imports
+import numpy as np
+import pandas as pd
+import torch
 from tqdm import tqdm
-import open_clip_torch as open_clip
 from PIL import Image
 import faiss
+import open_clip
 
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))

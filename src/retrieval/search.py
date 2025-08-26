@@ -1,7 +1,25 @@
-import argparse, numpy as np, pandas as pd, torch, faiss
+#!/usr/bin/env python3
+import argparse
+import sys
 from pathlib import Path
-from tqdm import tqdm
-import open_clip_torch as open_clip
+
+# Add project root to path for imports  
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Conservative dependency handling
+try:
+    import numpy as np
+    import pandas as pd
+    import torch
+    import faiss
+    from tqdm import tqdm
+    import open_clip
+except ImportError as e:
+    missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+    print(f"Missing dependency: {missing_dep}")
+    print("Please install dependencies with: pip install -r requirements.txt")
+    sys.exit(1)
 
 from utils import load_faiss, from_parquet
 import config

@@ -6,21 +6,36 @@ Uses semantic diversity, scene detection, and query-relevance scoring.
 
 import os
 import sys
-import cv2
-import numpy as np
 import argparse
 from pathlib import Path
-from tqdm import tqdm
 import json
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
-import torch
-from PIL import Image
-import open_clip_torch as open_clip
-from sklearn.cluster import KMeans
-from sklearn.metrics.pairwise import cosine_similarity
-from scipy.spatial.distance import pdist, squareform
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Conservative dependency handling - only warn about missing dependencies
+try:
+    import cv2
+    import numpy as np
+    from tqdm import tqdm
+    import torch
+    from PIL import Image
+    import open_clip
+    from sklearn.cluster import KMeans
+    from sklearn.metrics.pairwise import cosine_similarity
+    from scipy.spatial.distance import pdist, squareform
+except ImportError as e:
+    missing_dep = str(e).split("'")[1] if "'" in str(e) else str(e)
+    print(f"Missing dependency: {missing_dep}")
+    print("Please install dependencies with one of:")
+    print("  pip install -r requirements.txt")
+    print("  conda env create -f environment.yml") 
+    print("  or set AIC_FORCE_INSTALL=1 environment variable")
+    sys.exit(1)
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))

@@ -3,13 +3,11 @@ from pathlib import Path
 # Where artifacts (faiss index and mapping) will be saved
 ARTIFACT_DIR = Path("./artifacts")
 
-# Model (OpenCLIP)
-# Use QuickGELU variant to match 'openai' weights and avoid warnings
-MODEL_NAME = "ViT-B-32-quickgelu"
-MODEL_PRETRAINED = "openai"
+# Model (OpenCLIP) - T4 optimized: SigLIP2 L/16-256 (82.5% ImageNet, multilingual)
+MODEL_NAME = "ViT-L-16-SigLIP-256"
+MODEL_PRETRAINED = "webli"
 
-# Default CLIP model (smaller, faster, compatible with precomputed features)
-# Keep QuickGELU to align with 'openai' tag
+# Default CLIP model (smaller fallback for compatibility)
 DEFAULT_CLIP_MODEL = "ViT-B-32-quickgelu"
 DEFAULT_CLIP_PRETRAINED = "openai"
 
@@ -47,6 +45,12 @@ EXPERIMENTAL_PRESETS = {
     # SigLIP family (requires compatible open_clip build/checkpoints)
     "siglip-so400m-14-384": ("siglip-so400m-patch14-384", "webli"),
     "siglip-l16-384": ("siglip-L-16-384", "webli"),
+    # SigLIP 2 variants (available now!)
+    "siglip2-l16-256": ("ViT-L-16-SigLIP-256", "webli"),
+    "siglip2-so400m": ("ViT-SO400M-14-SigLIP", "webli"),
+    "siglip2-gopt": ("ViT-gopt-16-SigLIP2-384", "webli"),
+    # EVA-CLIP for maximum quality (if VRAM allows)
+    "eva-clip-18b": ("EVA-CLIP-18B", "merged2b_s34b_b88k"),
 }
 
 # Fallback order used when --experimental is set without explicit --exp-model

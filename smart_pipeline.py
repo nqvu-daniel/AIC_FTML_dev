@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Automated intelligent video processing pipeline.
+Automated intelligent video processing pipeline with CLIP-guided sampling.
 One command to rule them all - discovers, validates, and processes everything smartly.
+Now with semantic frame sampling for better retrieval performance.
 """
 
 import os
@@ -105,15 +106,26 @@ class SmartPipeline:
         
         self.log_progress("SAMPLING", f"Processing {len(discovered_videos)} video collections: {discovered_videos}")
         
+        # Use new CLIP-guided sampling
+        video_dir = self.dataset_root / "videos"  # Assuming videos are in videos subdirectory
+        if not video_dir.exists():
+            video_dir = self.dataset_root  # Fallback to root if no videos subdirectory
+        
         cmd = [
-            sys.executable, "src/sampling/frames_intelligent.py",
-            "--dataset_root", str(self.dataset_root),
-            "--videos"] + discovered_videos + [
-            "--target_fps", "0.5"
+            sys.executable, "scripts/smart_pipeline.py",
+            "--video_dir", str(video_dir),
+            "--output_dir", str(self.dataset_root / "pipeline_output"),
+            "--target_frames", "50",
+            "--sampling_only"  # Only do sampling in this step
         ]
         
-        if self.use_gpu:
-            cmd.append("--use_gpu")
+        # Add experimental model if configured
+        try:
+            import config
+            if hasattr(config, 'MODEL_NAME') and 'siglip' in config.MODEL_NAME.lower():
+                cmd.extend(["--experimental", "--exp_model", "siglip2-l16-256"])
+        except:
+            pass
         
         success, output = self.run_command(cmd, "SAMPLING", timeout=1800)  # 30 minutes max
         return success
@@ -122,25 +134,28 @@ class SmartPipeline:
         """Step 3: Build search index and text corpus"""
         self.log_progress("INDEXING", "Building search infrastructure...")
         
-        discovered_videos = self._discover_video_ids()
+        # Use smart pipeline for indexing
+        video_dir = self.dataset_root / "videos"
+        if not video_dir.exists():
+            video_dir = self.dataset_root
         
-        # Build search index
         cmd = [
-            sys.executable, "scripts/index.py",
-            "--dataset_root", str(self.dataset_root),
-            "--videos"] + discovered_videos
+            sys.executable, "scripts/smart_pipeline.py",
+            "--video_dir", str(video_dir),
+            "--output_dir", str(self.dataset_root / "pipeline_output"),
+            "--artifact_dir", str(self.dataset_root / "artifacts"),
+            "--indexing_only"  # Only do indexing since sampling was done earlier
+        ]
+        
+        # Add experimental model if configured
+        try:
+            import config
+            if hasattr(config, 'MODEL_NAME') and 'siglip' in config.MODEL_NAME.lower():
+                cmd.extend(["--experimental", "--exp_model", "siglip2-l16-256"])
+        except:
+            pass
         
         success, output = self.run_command(cmd, "INDEXING", timeout=3600)
-        if not success:
-            return False
-        
-        # Build text corpus for hybrid search
-        cmd = [
-            sys.executable, "scripts/build_text.py",
-            "--dataset_root", str(self.dataset_root),
-            "--videos"] + discovered_videos
-        
-        success, output = self.run_command(cmd, "TEXT_CORPUS", timeout=1800)
         return success
     
     def train_models(self):

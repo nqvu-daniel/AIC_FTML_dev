@@ -242,6 +242,15 @@ def main():
     )
     args = ap.parse_args()
 
+    # Handle experimental preset resolution
+    if args.experimental and args.exp_model and not args.exp_pretrained:
+        # Check if exp_model is a preset key
+        if args.exp_model in config.EXPERIMENTAL_PRESETS:
+            model_name, pretrained = config.EXPERIMENTAL_PRESETS[args.exp_model]
+            args.exp_model = model_name
+            args.exp_pretrained = pretrained
+            print(f"Using experimental preset '{args.exp_model}': {model_name} with {pretrained}")
+
     # Resolve outfile
     if args.outfile is None:
         if args.query_id:

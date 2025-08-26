@@ -8,6 +8,7 @@ NEEDED_FILES = [
     Path("config.py"),
     Path("utils.py"),
     Path("src/retrieval/use.py"),
+    Path("src/sampling/frames_auto.py"),
 ]
 
 

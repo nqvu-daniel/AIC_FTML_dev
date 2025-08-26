@@ -4,6 +4,13 @@ from pathlib import Path
 from rank_bm25 import BM25Okapi
 from sklearn.experimental import enable_hist_gradient_boosting  # noqa: F401
 from sklearn.ensemble import HistGradientBoostingClassifier
+import sys
+from pathlib import Path
+# Ensure project root is on sys.path so `utils` import works when run by path
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 from utils import load_faiss, from_parquet
 import config
 

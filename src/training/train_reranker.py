@@ -5,6 +5,12 @@ from tqdm import tqdm
 from rank_bm25 import BM25Okapi
 from sklearn.linear_model import LogisticRegression
 
+import sys
+# Ensure project root is on sys.path so imports like `utils` work
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 from utils import load_faiss, from_parquet
 import config
 

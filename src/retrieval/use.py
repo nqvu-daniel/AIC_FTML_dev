@@ -53,11 +53,14 @@ def encode_text(model, tokenizer, device, text: str):
     return t
 
 
-def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400, use_default_clip=False):
+def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400, use_default_clip=False, experimental=False, exp_model=None, exp_pretrained=None):
     import open_clip
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if use_default_clip:
+    if experimental and exp_model and exp_pretrained:
+        model_name = exp_model
+        pretrained = exp_pretrained
+    elif use_default_clip:
         model_name = getattr(config, "DEFAULT_CLIP_MODEL", "ViT-B-32")
         pretrained = getattr(config, "DEFAULT_CLIP_PRETRAINED", "openai")
     else:

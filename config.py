@@ -4,12 +4,13 @@ from pathlib import Path
 ARTIFACT_DIR = Path("./artifacts")
 
 # Model (OpenCLIP)
-# Default to CLIP ViT-B/32 so it runs without flags
-MODEL_NAME = "ViT-B-32"
+# Use QuickGELU variant to match 'openai' weights and avoid warnings
+MODEL_NAME = "ViT-B-32-quickgelu"
 MODEL_PRETRAINED = "openai"
 
 # Default CLIP model (smaller, faster, compatible with precomputed features)
-DEFAULT_CLIP_MODEL = "ViT-B-32"
+# Keep QuickGELU to align with 'openai' tag
+DEFAULT_CLIP_MODEL = "ViT-B-32-quickgelu"
 DEFAULT_CLIP_PRETRAINED = "openai"
 
 # Embedding dtype for storage

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import torch
 from rank_bm25 import BM25Okapi
+from PIL import Image
 
 # Handle both local development and packaged pipeline imports
 import sys
@@ -54,7 +55,7 @@ def encode_text(model, tokenizer, device, text: str):
 
 
 def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400, use_default_clip=False, experimental=False, exp_model=None, exp_pretrained=None):
-    import open_clip
+    import open_clip_torch as open_clip
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if experimental and exp_model and exp_pretrained:
@@ -136,6 +137,97 @@ def dedup_temporal(df, radius=1):
         kept.append(row)
         last[key] = n
     return pd.DataFrame(kept)
+
+
+def _load_open_clip(model_name, pretrained, device):
+    import open_clip_torch as open_clip
+    model, preprocess, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained, device=device)
+    tokenizer = open_clip.get_tokenizer(model_name)
+    return model, preprocess, tokenizer
+
+
+def rerank_cross_encoder(feats_df: pd.DataFrame, query: str, device: torch.device, batch: int = 32, model_name: str | None = None, pretrained: str | None = None) -> pd.Series:
+    """Re-score top candidates using a text-image model on actual keyframe images.
+    Expects `keyframe_path` present in mapping (via index.py) and columns in feats_df.
+    Returns a pandas Series of float scores aligned with feats_df index.
+    """
+    # Resolve model
+    if not model_name:
+        model_name = getattr(config, "DEFAULT_CLIP_MODEL", "ViT-B-32-quickgelu")
+    if not pretrained:
+        pretrained = getattr(config, "DEFAULT_CLIP_PRETRAINED", "openai")
+    try:
+        model, preprocess, tokenizer = _load_open_clip(model_name, pretrained, device)
+    except Exception:
+        # Fallback to configured model
+        model, preprocess, tokenizer = _load_open_clip(config.MODEL_NAME, config.MODEL_PRETRAINED, device)
+
+    # Encode query once
+    tok = tokenizer([query]).to(device)
+    with torch.no_grad():
+        if device.type == "cuda":
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                qv = model.encode_text(tok)
+        else:
+            qv = model.encode_text(tok)
+    qv = qv.float()
+    qv = qv / (qv.norm(dim=1, keepdim=True) + 1e-12)
+
+    # Prepare images
+    paths = feats_df.get("keyframe_path")
+    if paths is None:
+        # No paths -> cannot CE rerank; return existing score
+        return feats_df["score"] if "score" in feats_df else pd.Series([0.0] * len(feats_df), index=feats_df.index)
+
+    sims = []
+    imgs = []
+    idxs = []
+    for i, p in enumerate(paths):
+        try:
+            im = Image.open(p).convert("RGB")
+            imgs.append(preprocess(im).unsqueeze(0))
+            idxs.append(i)
+        except Exception:
+            sims.append(0.0)
+            idxs.append(i)
+            imgs.append(None)
+    # Batch encode
+    scores = torch.zeros(len(paths), dtype=torch.float32)
+    batch_tensors = []
+    batch_indices = []
+    for i, t in zip(idxs, imgs):
+        if t is None:
+            continue
+        batch_tensors.append(t)
+        batch_indices.append(i)
+        if len(batch_tensors) == batch:
+            inp = torch.cat(batch_tensors).to(device)
+            with torch.no_grad():
+                if device.type == "cuda":
+                    with torch.autocast(device_type="cuda", dtype=torch.float16):
+                        iv = model.encode_image(inp)
+                else:
+                    iv = model.encode_image(inp)
+            iv = iv.float()
+            iv = iv / (iv.norm(dim=1, keepdim=True) + 1e-12)
+            sc = (iv @ qv.T).squeeze(1).cpu()
+            for bi, s in zip(batch_indices, sc):
+                scores[bi] = s.item()
+            batch_tensors.clear(); batch_indices.clear()
+    # Flush remainder
+    if batch_tensors:
+        inp = torch.cat(batch_tensors).to(device)
+        with torch.no_grad():
+            if device.type == "cuda":
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    iv = model.encode_image(inp)
+            else:
+                iv = model.encode_image(inp)
+        iv = iv.float(); iv = iv / (iv.norm(dim=1, keepdim=True) + 1e-12)
+        sc = (iv @ qv.T).squeeze(1).cpu()
+        for bi, s in zip(batch_indices, sc):
+            scores[bi] = s.item()
+    return pd.Series(scores.numpy(), index=feats_df.index)
 
 
 def slugify(text: str, maxlen: int = 48) -> str:
@@ -226,12 +318,14 @@ def main():
         help="Output CSV path. If not set and --query_id is provided, writes submissions/{query_id}.csv; else submissions/kis_<slug>.csv",
     )
     ap.add_argument("--query_id", type=str, default=None, help="Official query identifier to name file as submissions/{query_id}.csv")
-    ap.add_argument("--task", type=str, choices=["kis", "vqa"], default="kis", help="Task format for CSV output")
+    ap.add_argument("--task", type=str, choices=["kis", "vqa", "trake"], default="kis", help="Task format for CSV output")
     ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes")
     ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
     ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
     ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
     ap.add_argument("--answer", type=str, default=None, help="VQA: Answer text to include as third column")
+    ap.add_argument("--rerank", type=str, choices=["none", "lr", "ce"], default="lr", help="Reranking strategy: none, logistic (lr), or cross-encoder (ce)")
+    ap.add_argument("--events_json", type=Path, default=None, help="TRAKE: JSON array of event descriptions for alignment")
     ap.add_argument("--model_path", type=Path, default=Path("./artifacts/reranker.joblib"))
     ap.add_argument("--model_url", type=str, default=None, help="Optional URL to download reranker if missing")
     ap.add_argument(
@@ -315,28 +409,39 @@ def main():
         exp_pretrained=args.exp_pretrained,
     )
 
-    # Load or download reranker
+    # Initial scoring: LR bundle if available, else RRF
     model = None
-    if not args.model_path.exists() and args.model_url:
-        maybe_download_model(args.model_url, args.model_path)
-    if args.model_path.exists():
-        bundle = joblib.load(args.model_path)
-        model = bundle["model"]
-        feat_names = bundle.get(
-            "feature_names",
-            ["dense_score", "bm25_score", "rank_dense", "rank_bm25", "token_overlap", "neighbor_consensus", "importance_score"],
-        )
-        # Ensure features present
-        for feat in feat_names:
-            if feat not in feats.columns:
-                feats[feat] = 1.0 if feat == "importance_score" else 0.0
-        X = feats[feat_names].values
-        probs = model.predict_proba(X)[:, 1]
-        feats["score"] = probs
-    else:
+    if args.rerank in {"lr", "ce"}:
+        if not args.model_path.exists() and args.model_url and args.rerank == "lr":
+            maybe_download_model(args.model_url, args.model_path)
+        if args.model_path.exists() and args.rerank == "lr":
+            bundle = joblib.load(args.model_path)
+            model = bundle["model"]
+            feat_names = bundle.get(
+                "feature_names",
+                ["dense_score", "bm25_score", "rank_dense", "rank_bm25", "token_overlap", "neighbor_consensus", "importance_score"],
+            )
+            for feat in feat_names:
+                if feat not in feats.columns:
+                    feats[feat] = 1.0 if feat == "importance_score" else 0.0
+            X = feats[feat_names].values
+            probs = model.predict_proba(X)[:, 1]
+            feats["score"] = probs
+    if "score" not in feats.columns:
         # Fall back to RRF-like using ranks
         k = 60
         feats["score"] = 1.0 / (k + feats["rank_dense"]) + 1.0 / (k + feats["rank_bm25"])
+
+    # Optional cross-encoder re-rank over current top 100
+    if args.rerank == "ce":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        feats = feats.sort_values("score", ascending=False).head(min(args.topk * 2, 200)).copy()
+        # Ensure keyframe_path present by merging with mapping
+        # mapping already used to form feats; it includes n and keyframe_path if built with scripts/index.py
+        if "keyframe_path" not in feats.columns and "keyframe_path" in mapping.columns:
+            feats = feats.merge(mapping[["global_idx", "keyframe_path"]], on="global_idx", how="left")
+        ce_scores = rerank_cross_encoder(feats, args.query, device)
+        feats["score"] = ce_scores.values
 
     # Rank, dedup, select
     feats = feats.sort_values("score", ascending=False)
@@ -346,13 +451,70 @@ def main():
     args.outfile.parent.mkdir(parents=True, exist_ok=True)
     if args.task == "kis":
         feats[["video_id", "frame_idx"]].to_csv(args.outfile, header=False, index=False)
-    else:
+        print(f"[OK] wrote {len(feats)} lines → {args.outfile}")
+    elif args.task == "vqa":
         if args.answer is None:
             raise SystemExit("For task=vqa, please provide --answer to include third column as per official format")
         outdf = feats[["video_id", "frame_idx"]].copy()
         outdf["answer"] = args.answer
         outdf.to_csv(args.outfile, header=False, index=False)
-    print(f"[OK] wrote {len(feats)} lines → {args.outfile}")
+        print(f"[OK] wrote {len(outdf)} lines → {args.outfile}")
+    else:  # TRAKE
+        # Determine target video: top-ranked video's id
+        top_video = feats.iloc[0]["video_id"]
+        # Load event descriptions
+        events = []
+        if args.events_json and args.events_json.exists():
+            try:
+                events = json.loads(args.events_json.read_text(encoding="utf-8"))
+                if isinstance(events, dict) and "events" in events:
+                    events = events["events"]
+                if not isinstance(events, list):
+                    events = []
+            except Exception:
+                events = []
+        if not events:
+            # Fallback: treat the single query as one event
+            events = [args.query]
+
+        # For each event, collect candidates and pick best frame within the top_video
+        picked = []
+        for ev in events:
+            ev_feats = collect_candidates(
+                ev, mapping, index, bm25, tokens_list, raw_docs,
+                top_dense=800, top_bm25=800,
+                use_default_clip=args.default_clip,
+                experimental=args.experimental,
+                exp_model=args.exp_model,
+                exp_pretrained=args.exp_pretrained,
+            )
+            ev_feats = ev_feats[ev_feats["video_id"] == top_video].copy()
+            if ev_feats.empty:
+                # Fallback to top frame from overall feats for this video
+                cand = feats[feats["video_id"] == top_video].head(1)
+                if not cand.empty:
+                    picked.append(int(cand.iloc[0]["frame_idx"]))
+                else:
+                    picked.append(int(feats.iloc[0]["frame_idx"]))
+                continue
+            # If CE requested, re-score top with CE for this event
+            if args.rerank == "ce":
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                if "keyframe_path" not in ev_feats.columns and "keyframe_path" in mapping.columns:
+                    ev_feats = ev_feats.merge(mapping[["global_idx", "keyframe_path"]], on="global_idx", how="left")
+                ce_scores = rerank_cross_encoder(ev_feats.sort_values("score", ascending=False).head(100), ev, device)
+                # merge back CE scores by index
+                ev_feats = ev_feats.loc[ce_scores.index].copy()
+                ev_feats["score"] = ce_scores.values
+            ev_feats = ev_feats.sort_values("score", ascending=False)
+            picked.append(int(ev_feats.iloc[0]["frame_idx"]))
+
+        # Compose single-line CSV: video_id,frame1,frame2,...
+        out_row = [top_video] + picked
+        with open(args.outfile, "w", encoding="utf-8") as f:
+            f.write(",".join([str(x) for x in out_row]))
+            f.write("\n")
+        print(f"[OK] wrote TRAKE line with {len(picked)} events → {args.outfile}")
 
 
 if __name__ == "__main__":

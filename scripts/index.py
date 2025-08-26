@@ -1,7 +1,7 @@
 import argparse, os, json, numpy as np, pandas as pd, torch, sys, re
 from pathlib import Path
 from tqdm import tqdm
-import open_clip
+import open_clip_torch as open_clip
 from PIL import Image
 import faiss
 
@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
     ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
     ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
+    ap.add_argument("--segments", type=Path, default=None, help="Optional segments.parquet to index representative frames per segment")
     args = ap.parse_args()
 
     root = args.dataset_root
@@ -112,6 +113,15 @@ def main():
     
     print(f"Processing {len(all_video_ids)} videos: {all_video_ids[:5]}{'...' if len(all_video_ids) > 5 else ''}")
 
+    # Load segments if provided
+    seg_df_all = None
+    if args.segments and Path(args.segments).exists():
+        try:
+            seg_df_all = pd.read_parquet(args.segments)
+        except Exception as e:
+            print(f"[WARN] Failed to read segments file {args.segments}: {e}")
+            seg_df_all = None
+
     for vid in all_video_ids:
         map_csv = root / "map_keyframes" / f"{vid}.csv"
         if not map_csv.exists():
@@ -119,11 +129,46 @@ def main():
         df = pd.read_csv(map_csv)
         # Expect columns: n, pts_time, fps, frame_idx, [importance_score]
         
+        # If segments provided, select representative keyframes per segment by nearest frame_idx
+        selected_rows = None
+        seg_rows = []
+        if seg_df_all is not None:
+            seg_df = seg_df_all[seg_df_all["video_id"] == vid].copy()
+            if not seg_df.empty and {"rep_frames", "seg_id"}.issubset(seg_df.columns):
+                frame_list = df["frame_idx"].to_numpy()
+                idx_by_frame = {int(f): i for i, f in enumerate(frame_list)}
+                take_indices = []
+                n_to_seg = {}
+                for _, srow in seg_df.iterrows():
+                    reps = srow["rep_frames"]
+                    if isinstance(reps, str):
+                        try:
+                            import ast
+                            reps = ast.literal_eval(reps)
+                        except Exception:
+                            reps = []
+                    for rf in reps or []:
+                        # find nearest keyframe by frame_idx
+                        if int(rf) in idx_by_frame:
+                            i = idx_by_frame[int(rf)]
+                        else:
+                            # nearest by absolute diff
+                            i = int(np.argmin(np.abs(frame_list - int(rf))))
+                        take_indices.append(i)
+                        n_val = int(df.iloc[i]["n"])
+                        n_to_seg[n_val] = int(srow["seg_id"])
+                if take_indices:
+                    take_indices = sorted(set(int(i) for i in take_indices))
+                    selected_rows = df.iloc[take_indices].reset_index(drop=True)
+                    # attach seg_id mapping later per row
+                    seg_rows = [n_to_seg.get(int(r["n"]), -1) for _, r in selected_rows.iterrows()]
+
         # Collect keyframes from both directories (competition + intelligent)
         kf_paths = []
         importance_scores = []
         
-        for _, row in df.iterrows():
+        iter_df = selected_rows if selected_rows is not None else df
+        for _, row in iter_df.iterrows():
             n = int(row["n"])
             
             # Try intelligent keyframes first, then competition keyframes (support multiple formats)
@@ -174,7 +219,7 @@ def main():
                         print(f"[WARN] Feature count {vecs.shape[0]} != keyframes {len(kf_paths)}; truncating to min")
                         m = min(vecs.shape[0], len(kf_paths))
                         vecs = vecs[:m]
-                        df = df.iloc[:m]
+                        iter_df = iter_df.iloc[:m]
                         kf_paths = kf_paths[:m]
         else:
             print(f"[COMPUTE] Generating embeddings for {vid} using {config.MODEL_NAME}")
@@ -185,8 +230,8 @@ def main():
         all_vecs.append(vecs)
 
         # mapping rows with importance scores
-        for i, (idx, row) in enumerate(df.iterrows()):
-            rows.append({
+        for i, (idx, row) in enumerate(iter_df.iterrows()):
+            mrow = {
                 "global_idx": start_idx + i,
                 "video_id": vid,
                 "n": int(row["n"]),
@@ -195,7 +240,14 @@ def main():
                 "frame_idx": int(row["frame_idx"]),
                 "keyframe_path": str(kf_paths[i]),
                 "importance_score": importance_scores[i]
-            })
+            }
+            # Attach seg_id if we used segments
+            if selected_rows is not None and seg_rows:
+                try:
+                    mrow["seg_id"] = int(seg_rows[i])
+                except Exception:
+                    mrow["seg_id"] = int(-1)
+            rows.append(mrow)
 
     X = np.concatenate(all_vecs, axis=0).astype("float32")
     # choose index

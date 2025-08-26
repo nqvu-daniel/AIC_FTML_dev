@@ -13,7 +13,7 @@ import sys
 import re
 from pathlib import Path
 from tqdm import tqdm
-import open_clip
+import open_clip_torch as open_clip
 from PIL import Image
 import faiss
 

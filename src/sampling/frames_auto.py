@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 import torch
 from PIL import Image
-import open_clip
+import open_clip_torch as open_clip
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.spatial.distance import pdist, squareform

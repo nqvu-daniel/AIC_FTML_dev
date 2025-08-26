@@ -51,13 +51,18 @@ python src/retrieval/use.py --query "your search" \
 conda activate aic-ftml-gpu  # or: conda activate aic-ftml
 ```
 
-### Process Your Dataset
+### Process Your Dataset (Segment-First V2)
 ```bash
-# One command processes everything automatically
-python smart_pipeline.py /path/to/your/dataset
+# 1) Segment videos (TransNetV2-ready; OpenCV fallback)
+python scripts/segment_videos.py --dataset_root /path/to/your/dataset --videos L21 L22 --artifact_dir ./artifacts
 
-# With options
-python smart_pipeline.py /path/to/your/dataset --workers 8 --no-gpu
+# 2) Build index over segment representative frames
+python scripts/index.py --dataset_root /path/to/your/dataset --videos L21 L22 --segments ./artifacts/segments.parquet
+
+# 3) Build text corpus (optional ASR transcripts; merged per video)
+python scripts/build_text.py --dataset_root /path/to/your/dataset --videos L21 L22 \
+  --artifact_dir ./artifacts --segments ./artifacts/segments.parquet \
+  --transcripts data/transcripts.jsonl   # optional
 ```
 
 ### Linux CLI Deployment
@@ -76,7 +81,7 @@ python smart_pipeline.py /path/to/your/dataset --workers 8 --no-gpu
 ### Search and Export
 ```bash
 # One-shot search (recommended for users). Writes Top-100 CSV to submissions/
-python src/retrieval/use.py --query "your search description"
+python src/retrieval/use.py --query "your search description" --rerank ce
 
 # Developer alternatives:
 # Inspect reranked results (prints table)
@@ -84,11 +89,15 @@ python src/retrieval/search_hybrid_rerank.py --index_dir ./artifacts \
   --query "your search description" --topk 100
 
 # Official submission naming (per-query files): write directly to submissions/{query_id}.csv
-python src/retrieval/use.py --query "your search" --query_id q123
+python src/retrieval/use.py --query "your search" --query_id q123 --rerank ce
 
 # VQA format (3 columns): video_id,frame_idx,answer
-python src/retrieval/use.py --query "question text" --task vqa --answer "màu xanh" --query_id q_vqa_01
+python src/retrieval/use.py --query "question text" --task vqa --answer "màu xanh" --query_id q_vqa_01 --rerank ce
 
+
+# TRAKE (single line per query): video_id,frame1,frame2,...,frameN
+python src/retrieval/use.py --task trake --query "high jump" \
+  --events_json data/events.json --query_id q_trake_01 --rerank ce
 
 # Export baseline fusion (RRF) CSV explicitly (also supports --answer)
 python src/retrieval/export_csv.py --index_dir ./artifacts \
@@ -100,19 +109,21 @@ python src/retrieval/export_csv.py --index_dir ./artifacts \
 **📋 See [`EVALUATION.md`](EVALUATION.md) for complete evaluation instructions, CSV formats, and official scoring.**
 
 Quick reference:
-- Single query: `python src/retrieval/use.py --query "search" --query_id q123 --task kis`
+- Single query: `python src/retrieval/use.py --query "search" --query_id q123 --task kis --rerank ce`
 - Batch creation: `python scripts/make_submission.py --spec queries.json --index_dir ./artifacts`
 - Ground truth format: KIS/VQA use `span: [start,end]`, TRAKE uses `spans: [[s1,e1],...]`
+- Scoring is performed by the competition host. This project only exports prediction CSVs.
 
 ### CLI Cheatsheet (Developers)
 # The steps below (sampling, indexing, corpus building, training) are for development.
 # Competition hosts do NOT need these; use the one-shot command above.
 - Validate + preprocess: `python scripts/dataset_validator.py /path/to/dataset`
 - Intelligent sampling: `python src/sampling/frames_intelligent.py --dataset_root /path/to/dataset --videos L21 L22 --target_fps 0.5 --use_gpu`
-- Build index: `python scripts/index.py --dataset_root /path/to/dataset --videos L21 L22`
+- Segment videos: `python scripts/segment_videos.py --dataset_root /path/to/dataset --videos L21 L22`
+- Build index (segment reps): `python scripts/index.py --dataset_root /path/to/dataset --videos L21 L22 --segments ./artifacts/segments.parquet`
   - Add `--flat` for GPU-compatible flat index (faster search with faiss-gpu)
   - Default HNSW index works on CPU but not GPU-accelerated
-- Build text corpus: `python scripts/build_text.py --dataset_root /path/to/dataset --videos L21 L22`
+- Build text corpus (with ASR): `python scripts/build_text.py --dataset_root /path/to/dataset --videos L21 L22 --segments ./artifacts/segments.parquet --transcripts data/transcripts.jsonl`
 - Train re‑ranker: `python src/training/train_reranker.py --index_dir ./artifacts --train_jsonl data/train.jsonl`
 - Search (auto‑uses model if present): `python src/retrieval/search_hybrid_rerank.py --index_dir ./artifacts --query "query" --topk 100`
 - Export CSV: `python src/retrieval/export_csv.py --index_dir ./artifacts --query "query" --outfile results.csv`

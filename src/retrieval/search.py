@@ -1,7 +1,7 @@
 import argparse, numpy as np, pandas as pd, torch, faiss
 from pathlib import Path
 from tqdm import tqdm
-import open_clip
+import open_clip_torch as open_clip
 
 from utils import load_faiss, from_parquet
 import config

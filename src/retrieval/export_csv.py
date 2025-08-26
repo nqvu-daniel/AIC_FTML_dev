@@ -1,4 +1,5 @@
-import argparse, json, numpy as np, pandas as pd, torch, faiss, open_clip, re
+import argparse, json, numpy as np, pandas as pd, torch, faiss, re
+import open_clip_torch as open_clip
 from pathlib import Path
 from rank_bm25 import BM25Okapi
 

@@ -68,7 +68,7 @@ python scripts/build_text.py --dataset_root /path/to/your/dataset --videos L21 L
 ### Linux CLI Deployment
 - Prereqs: Linux with conda (Miniconda/Anaconda). GPU optional (CUDA 11.8+/driver if using GPU env).
 - Install env: `./setup_env.sh --gpu` (or `--cpu`), then `conda activate aic-ftml-gpu` (or `aic-ftml`).
-- Run end‑to‑end via CLI: `python smart_pipeline.py /data/aic2024`.
+- Run segment-first pipeline: Use scripts in order (segment_videos → index → build_text).
 - No web service is included by default; this project is CLI‑first. A thin API can be added if needed.
 
 ### GPU Support & Requirements
@@ -330,7 +330,10 @@ For existing extractions, use the manual repair script provided above to fix org
 
 ```
 AIC_FTML_dev/
-├── smart_pipeline.py             # Automated processing pipeline
+├── scripts/
+│   ├── segment_videos.py         # Video segmentation with TransNetV2
+│   ├── index.py                  # Build FAISS visual index
+│   └── build_text.py             # Create text corpus
 ├── setup_env.sh                  # Conda environment setup
 ├── config.py                     # Configuration settings
 ├── utils.py                      # Shared utilities
@@ -408,7 +411,7 @@ python src/training/train_reranker_gbm.py --index_dir ./artifacts --train_jsonl 
 ### Model Loading in Inference
 - The search CLI automatically loads a trained re‑ranker from `./artifacts/reranker.joblib` if present and uses it to score candidates.
 - If no trained model is found, it falls back to a robust fusion baseline (RRF over dense and BM25 ranks).
-- The end‑to‑end `smart_pipeline.py` will attempt training automatically if it finds `train*.jsonl` or `dev*.jsonl` under the dataset root.
+- The training can be run with `python src/training/train_reranker.py` if you have training data.
 
 To use a hosted trained model (recommended for users), download it to `./artifacts/reranker.joblib` via:
 

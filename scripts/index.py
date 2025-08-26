@@ -1,26 +1,32 @@
-import argparse, os, json, numpy as np, pandas as pd, torch, sys, re
+import argparse
+import re
+import sys
 from pathlib import Path
-from tqdm import tqdm
-import open_clip_torch as open_clip
-from PIL import Image
+
 import faiss
+import numpy as np
+import open_clip
+import pandas as pd
+import torch
+from tqdm import tqdm
 
 # Add parent directory to path to import utils
 sys.path.append(str(Path(__file__).parent.parent))
 
-from utils import ensure_dir, load_image, normalize_rows, save_faiss, to_parquet, as_type
 import config
+from utils import ensure_dir, load_image, normalize_rows, save_faiss, to_parquet
+
 
 def embed_keyframes(model, preprocess, device, kf_paths):
     embs = []
     bs = 64
     for i in tqdm(range(0, len(kf_paths), bs), desc="Embedding keyframes"):
-        batch_paths = kf_paths[i:i+bs]
+        batch_paths = kf_paths[i : i + bs]
         imgs = [preprocess(load_image(p)).unsqueeze(0) for p in batch_paths]
         imgs = torch.cat(imgs).to(device)
         with torch.no_grad():
-            if device.type == 'cuda':
-                with torch.autocast(device_type='cuda', dtype=torch.float16):
+            if device.type == "cuda":
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
                     img_feats = model.encode_image(imgs)
             else:
                 img_feats = model.encode_image(imgs)
@@ -28,18 +34,42 @@ def embed_keyframes(model, preprocess, device, kf_paths):
         embs.append(img_feats)
     return np.concatenate(embs, axis=0)
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset_root", type=Path, required=True)
-    ap.add_argument("--videos", nargs="+", required=True, help="Video collections to index, e.g., L21 L22, or specific videos L21_V001 L22_V003")
-    ap.add_argument("--use_precomputed", action="store_true", default=True, help="Use features/*.npy if present (default: True)")
+    ap.add_argument(
+        "--videos",
+        nargs="+",
+        required=True,
+        help="Video collections to index, e.g., L21 L22, or specific videos L21_V001 L22_V003",
+    )
+    ap.add_argument(
+        "--use_precomputed", action="store_true", default=True, help="Use features/*.npy if present (default: True)"
+    )
     ap.add_argument("--no_precomputed", action="store_true", help="Force live computation, ignore precomputed features")
     ap.add_argument("--flat", action="store_true", help="Use exact IndexFlatIP instead of HNSW")
-    ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP model (512D, compatible with precomputed features)")
-    ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
-    ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
+    ap.add_argument(
+        "--default-clip",
+        action="store_true",
+        help="Use default ViT-B-32 CLIP model (512D, compatible with precomputed features)",
+    )
+    ap.add_argument(
+        "--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)"
+    )
+    ap.add_argument(
+        "--exp-model",
+        type=str,
+        default=None,
+        help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)",
+    )
     ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
-    ap.add_argument("--segments", type=Path, default=None, help="Optional segments.parquet to index representative frames per segment")
+    ap.add_argument(
+        "--segments",
+        type=Path,
+        default=None,
+        help="Optional segments.parquet to index representative frames per segment",
+    )
     args = ap.parse_args()
 
     root = args.dataset_root
@@ -47,26 +77,26 @@ def main():
     ensure_dir(ART)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     # Choose model based on flags
-    if hasattr(args, 'default_clip') and args.default_clip:
+    if hasattr(args, "default_clip") and args.default_clip:
         model_name = config.DEFAULT_CLIP_MODEL
         model_pretrained = config.DEFAULT_CLIP_PRETRAINED
         print(f"Using default CLIP model: {model_name} ({model_pretrained})")
-    elif getattr(args, 'experimental', False):
+    elif getattr(args, "experimental", False):
         # Experimental path: pick from preset or fallback order
-        preset_key = (args.exp_model or '').lower() if args.exp_model else None
+        preset_key = (args.exp_model or "").lower() if args.exp_model else None
         picked = None
-        if preset_key and preset_key in getattr(config, 'EXPERIMENTAL_PRESETS', {}):
+        if preset_key and preset_key in getattr(config, "EXPERIMENTAL_PRESETS", {}):
             picked = config.EXPERIMENTAL_PRESETS[preset_key]
-        elif preset_key and preset_key not in getattr(config, 'EXPERIMENTAL_PRESETS', {}):
+        elif preset_key and preset_key not in getattr(config, "EXPERIMENTAL_PRESETS", {}):
             # Treat exp-model as raw model name; use provided or default pretrained
             model_name = args.exp_model
-            model_pretrained = args.exp_pretrained or getattr(config, 'MODEL_PRETRAINED', 'openai')
+            model_pretrained = args.exp_pretrained or getattr(config, "MODEL_PRETRAINED", "openai")
             print(f"[EXPERIMENTAL] Using custom model: {model_name} ({model_pretrained})")
         else:
             # Try fallbacks in order
-            for key in getattr(config, 'EXPERIMENTAL_FALLBACK_ORDER', []):
+            for key in getattr(config, "EXPERIMENTAL_FALLBACK_ORDER", []):
                 if key in config.EXPERIMENTAL_PRESETS:
                     picked = config.EXPERIMENTAL_PRESETS[key]
                     print(f"[EXPERIMENTAL] Selected preset '{key}': {picked[0]} ({picked[1]})")
@@ -74,26 +104,26 @@ def main():
         if picked:
             model_name, model_pretrained = picked
         # Override pretrained if user supplied
-        if args.exp_pretrained and 'model_pretrained' in locals():
+        if args.exp_pretrained and "model_pretrained" in locals():
             model_pretrained = args.exp_pretrained
     else:
         model_name = config.MODEL_NAME
         model_pretrained = config.MODEL_PRETRAINED
         print(f"Using configured model: {model_name} ({model_pretrained})")
-    
+
     model, _, preprocess = open_clip.create_model_and_transforms(model_name, pretrained=model_pretrained, device=device)
-    
+
     # Get model embedding dimension for compatibility checks
     model_dim = model.visual.output_dim
     print(f"Model: {model_name} ({model_pretrained}) | embedding dim: {model_dim}")
 
     all_vecs = []
     rows = []
-    
+
     # Expand video collections (L21 -> all L21_V* videos)
     all_video_ids = []
     for vid_arg in args.videos:
-        if re.match(r'^L\d{2}$', vid_arg):  # Collection ID like L21
+        if re.match(r"^L\d{2}$", vid_arg):  # Collection ID like L21
             # Find all videos in this collection
             map_keyframes_dir = root / "map_keyframes"
             if map_keyframes_dir.exists():
@@ -107,10 +137,10 @@ def main():
                 raise FileNotFoundError(f"map_keyframes directory not found: {map_keyframes_dir}")
         else:  # Specific video ID like L21_V001
             all_video_ids.append(vid_arg)
-    
+
     if not all_video_ids:
         raise ValueError("No video IDs found to process")
-    
+
     print(f"Processing {len(all_video_ids)} videos: {all_video_ids[:5]}{'...' if len(all_video_ids) > 5 else ''}")
 
     # Load segments if provided
@@ -128,7 +158,7 @@ def main():
             raise FileNotFoundError(map_csv)
         df = pd.read_csv(map_csv)
         # Expect columns: n, pts_time, fps, frame_idx, [importance_score]
-        
+
         # If segments provided, select representative keyframes per segment by nearest frame_idx
         selected_rows = None
         seg_rows = []
@@ -144,6 +174,7 @@ def main():
                     if isinstance(reps, str):
                         try:
                             import ast
+
                             reps = ast.literal_eval(reps)
                         except Exception:
                             reps = []
@@ -166,32 +197,32 @@ def main():
         # Collect keyframes from both directories (competition + intelligent)
         kf_paths = []
         importance_scores = []
-        
+
         iter_df = selected_rows if selected_rows is not None else df
         for _, row in iter_df.iterrows():
             n = int(row["n"])
-            
+
             # Try intelligent keyframes first, then competition keyframes (support multiple formats)
             intelligent_path = None
             competition_path = None
-            
-            for ext in ['.png', '.jpg', '.jpeg']:
+
+            for ext in [".png", ".jpg", ".jpeg"]:
                 intelligent_candidate = root / "keyframes_intelligent" / vid / f"{n:03d}{ext}"
                 competition_candidate = root / "keyframes" / vid / f"{n:03d}{ext}"
-                
+
                 if intelligent_candidate.exists():
                     intelligent_path = intelligent_candidate
                     break
                 elif competition_candidate.exists():
                     competition_path = competition_candidate
-            
+
             if intelligent_path:
                 kf_paths.append(intelligent_path)
             elif competition_path:
                 kf_paths.append(competition_path)
             else:
                 raise FileNotFoundError(f"Keyframe {n:03d}.[png|jpg|jpeg] not found for {vid}")
-            
+
             # Get importance score if available
             importance = row.get("importance_score", 1.0)
             importance_scores.append(float(importance))
@@ -203,11 +234,11 @@ def main():
                 vecs = embed_keyframes(model, preprocess, device, kf_paths)
             else:
                 vecs = np.load(feat_file)  # shape [T, D]; we assume T==len(kf_paths)
-                
+
                 # Model compatibility check
                 precomputed_dim = vecs.shape[1]
                 if precomputed_dim != model_dim:
-                    print(f"[ERROR] Precomputed feature dimension mismatch!")
+                    print("[ERROR] Precomputed feature dimension mismatch!")
                     print(f"  Precomputed: {precomputed_dim}D (from {feat_file})")
                     print(f"  Model: {model_dim}D ({model_name})")
                     print(f"  Falling back to live computation for {vid}")
@@ -239,14 +270,14 @@ def main():
                 "fps": float(row["fps"]),
                 "frame_idx": int(row["frame_idx"]),
                 "keyframe_path": str(kf_paths[i]),
-                "importance_score": importance_scores[i]
+                "importance_score": importance_scores[i],
             }
             # Attach seg_id if we used segments
             if selected_rows is not None and seg_rows:
                 try:
                     mrow["seg_id"] = int(seg_rows[i])
                 except Exception:
-                    mrow["seg_id"] = int(-1)
+                    mrow["seg_id"] = -1
             rows.append(mrow)
 
     X = np.concatenate(all_vecs, axis=0).astype("float32")
@@ -266,6 +297,7 @@ def main():
     print(f"[OK] Saved index → {faiss_path}")
     print(f"[OK] Saved mapping → {map_path}")
     print(f"[INFO] Total vectors: {X.shape[0]}")
+
 
 if __name__ == "__main__":
     main()

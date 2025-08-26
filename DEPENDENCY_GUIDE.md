@@ -32,7 +32,7 @@ conda activate aic-ftml
 ### **Option 3: Auto-Install Mode**
 ```bash
 export AIC_FORCE_INSTALL=1
-python scripts/smart_pipeline.py --help
+python scripts/segment_videos.py --help
 ```
 
 ### **Option 4: Use Setup Script**
@@ -72,7 +72,10 @@ Please install dependencies with: pip install -r requirements.txt
 ### Want Auto-Install
 ```bash
 export AIC_FORCE_INSTALL=1
-python scripts/smart_pipeline.py
+# Run pipeline steps:
+python scripts/segment_videos.py --dataset_root /path/to/dataset
+python scripts/index.py --dataset_root /path/to/dataset
+python scripts/build_text.py --dataset_root /path/to/dataset
 ```
 
 ### Colab Issues
@@ -89,4 +92,4 @@ The colab notebook handles dependencies automatically. If issues persist:
 - ✅ **Optional auto-install when needed**
 - ✅ **Respects existing installations**
 
-The smart pipeline and other scripts now work reliably across all environments!
+The segment-first pipeline scripts now work reliably across all environments!

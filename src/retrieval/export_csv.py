@@ -1,16 +1,24 @@
-import argparse, json, numpy as np, pandas as pd, torch, faiss, re
-import open_clip_torch as open_clip
+import argparse
+import json
+import re
 from pathlib import Path
+
+import numpy as np
+import open_clip
+import pandas as pd
+import torch
 from rank_bm25 import BM25Okapi
 
-from utils import load_faiss, from_parquet
 import config
+from utils import from_parquet, load_faiss
+
 
 def simple_tokenize(text: str):
     text = text.lower()
     text = re.sub(r"[^0-9a-zA-Z\u00C0-\u1EF9]+", " ", text)
     toks = [t for t in text.split() if len(t) > 1]
     return toks
+
 
 def rrf_fuse(rank_lists, k=60):
     scores = {}
@@ -19,17 +27,19 @@ def rrf_fuse(rank_lists, k=60):
             scores[gid] = scores.get(gid, 0.0) + 1.0 / (k + r + 1)
     return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
+
 def encode_text(model, tokenizer, device, text: str):
     tok = tokenizer([text]).to(device)
     with torch.no_grad():
-        if device.type == 'cuda':
-            with torch.autocast(device_type='cuda', dtype=torch.float16):
+        if device.type == "cuda":
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
                 t = model.encode_text(tok)
         else:
             t = model.encode_text(tok)
     t = t.float().cpu().numpy()
     t = t / (np.linalg.norm(t, axis=1, keepdims=True) + 1e-12)
     return t
+
 
 def dedup_temporal(df, radius=1):
     kept = []
@@ -43,14 +53,24 @@ def dedup_temporal(df, radius=1):
         last[key] = n
     return pd.DataFrame(kept)
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--index_dir", type=Path, default=config.ARTIFACT_DIR)
     ap.add_argument("--query", type=str, required=True)
     ap.add_argument("--outfile", type=Path, required=True)
-    ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes")
-    ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
-    ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
+    ap.add_argument(
+        "--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes"
+    )
+    ap.add_argument(
+        "--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)"
+    )
+    ap.add_argument(
+        "--exp-model",
+        type=str,
+        default=None,
+        help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)",
+    )
     ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
     ap.add_argument("--answer", type=str, default=None)
     ap.add_argument("--rrf_k", type=int, default=60)
@@ -68,7 +88,7 @@ def main():
     if not corpus_path.exists():
         raise FileNotFoundError(f"{corpus_path} not found. Run build_text.py first.")
     raw_docs, tokens_list = [], []
-    with open(corpus_path, "r", encoding="utf-8") as f:
+    with open(corpus_path, encoding="utf-8") as f:
         for line in f:
             j = json.loads(line)
             raw_docs.append(j["raw"])
@@ -77,24 +97,25 @@ def main():
     bm25 = BM25Okapi(tokens_list)
     q_tokens = simple_tokenize(args.query)
     bm25_scores = bm25.get_scores(q_tokens)
-    bm25_top_idx = np.argsort(-bm25_scores)[:args.bm25_top]
+    bm25_top_idx = np.argsort(-bm25_scores)[: args.bm25_top]
 
     # dense
-    import open_clip, torch, numpy as np
+    import torch
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.default_clip:
         model_name = getattr(config, "DEFAULT_CLIP_MODEL", "ViT-B-32")
         pretrained = getattr(config, "DEFAULT_CLIP_PRETRAINED", "openai")
     elif args.experimental:
-        preset_key = (args.exp_model or '').lower() if args.exp_model else None
+        preset_key = (args.exp_model or "").lower() if args.exp_model else None
         picked = None
-        if preset_key and preset_key in getattr(config, 'EXPERIMENTAL_PRESETS', {}):
+        if preset_key and preset_key in getattr(config, "EXPERIMENTAL_PRESETS", {}):
             picked = config.EXPERIMENTAL_PRESETS[preset_key]
         elif preset_key:
             model_name = args.exp_model
-            pretrained = args.exp_pretrained or getattr(config, 'MODEL_PRETRAINED', 'openai')
+            pretrained = args.exp_pretrained or getattr(config, "MODEL_PRETRAINED", "openai")
         else:
-            for key in getattr(config, 'EXPERIMENTAL_FALLBACK_ORDER', []):
+            for key in getattr(config, "EXPERIMENTAL_FALLBACK_ORDER", []):
                 if key in config.EXPERIMENTAL_PRESETS:
                     picked = config.EXPERIMENTAL_PRESETS[key]
                     break
@@ -115,8 +136,9 @@ def main():
     fused = rrf_fuse([dense_top_idx, bm25_top_idx], k=args.rrf_k)
     # build list and dedup
     import pandas as pd
+
     rows = []
-    for gid, score in fused[:args.dense_top + args.bm25_top]:
+    for gid, score in fused[: args.dense_top + args.bm25_top]:
         r = mapping.iloc[int(gid)].to_dict()
         r["fused_score"] = float(score)
         rows.append(r)
@@ -125,14 +147,15 @@ def main():
 
     # write CSV
     if args.answer is None:
-        outdf = df[["video_id","frame_idx"]]
+        outdf = df[["video_id", "frame_idx"]]
     else:
-        outdf = df[["video_id","frame_idx"]].copy()
+        outdf = df[["video_id", "frame_idx"]].copy()
         outdf["answer"] = args.answer
 
     args.outfile.parent.mkdir(parents=True, exist_ok=True)
     outdf.to_csv(args.outfile, header=False, index=False)
     print(f"[OK] wrote {len(outdf)} lines → {args.outfile}")
+
 
 if __name__ == "__main__":
     main()

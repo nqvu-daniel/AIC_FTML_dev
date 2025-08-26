@@ -1,18 +1,17 @@
 import argparse
 import json
 import re
+
+# Handle both local development and packaged pipeline imports
+import sys
 from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
 import torch
-from rank_bm25 import BM25Okapi
 from PIL import Image
-
-# Handle both local development and packaged pipeline imports
-import sys
-from pathlib import Path
+from rank_bm25 import BM25Okapi
 
 # Add current directory to path for packaged pipeline
 current_dir = Path(__file__).parent.parent.parent
@@ -54,8 +53,21 @@ def encode_text(model, tokenizer, device, text: str):
     return t
 
 
-def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_dense=400, top_bm25=400, use_default_clip=False, experimental=False, exp_model=None, exp_pretrained=None):
-    import open_clip_torch as open_clip
+def collect_candidates(
+    query,
+    mapping,
+    index,
+    bm25,
+    tokens_list,
+    raw_docs,
+    top_dense=400,
+    top_bm25=400,
+    use_default_clip=False,
+    experimental=False,
+    exp_model=None,
+    exp_pretrained=None,
+):
+    import open_clip
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if experimental and exp_model and exp_pretrained:
@@ -67,9 +79,7 @@ def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_d
     else:
         model_name = config.MODEL_NAME
         pretrained = config.MODEL_PRETRAINED
-    model, _, _ = open_clip.create_model_and_transforms(
-        model_name, pretrained=pretrained, device=device
-    )
+    model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained, device=device)
     tokenizer = open_clip.get_tokenizer(model_name)
     qv = encode_text(model, tokenizer, device, query)
     D, I = index.search(qv, top_dense)
@@ -117,10 +127,7 @@ def collect_candidates(query, mapping, index, bm25, tokens_list, raw_docs, top_d
     df = df.sort_values(["video_id", "n"]).reset_index(drop=True)
     consensus = []
     for _, row in df.iterrows():
-        cnt = (
-            df[(df["video_id"] == row["video_id"]) & (df["n"].between(row["n"] - 1, row["n"] + 1))].shape[0]
-            - 1
-        )
+        cnt = df[(df["video_id"] == row["video_id"]) & (df["n"].between(row["n"] - 1, row["n"] + 1))].shape[0] - 1
         consensus.append(cnt)
     df["neighbor_consensus"] = consensus
     return df
@@ -140,13 +147,21 @@ def dedup_temporal(df, radius=1):
 
 
 def _load_open_clip(model_name, pretrained, device):
-    import open_clip_torch as open_clip
+    import open_clip
+
     model, preprocess, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained, device=device)
     tokenizer = open_clip.get_tokenizer(model_name)
     return model, preprocess, tokenizer
 
 
-def rerank_cross_encoder(feats_df: pd.DataFrame, query: str, device: torch.device, batch: int = 32, model_name: str | None = None, pretrained: str | None = None) -> pd.Series:
+def rerank_cross_encoder(
+    feats_df: pd.DataFrame,
+    query: str,
+    device: torch.device,
+    batch: int = 32,
+    model_name: str | None = None,
+    pretrained: str | None = None,
+) -> pd.Series:
     """Re-score top candidates using a text-image model on actual keyframe images.
     Expects `keyframe_path` present in mapping (via index.py) and columns in feats_df.
     Returns a pandas Series of float scores aligned with feats_df index.
@@ -213,7 +228,8 @@ def rerank_cross_encoder(feats_df: pd.DataFrame, query: str, device: torch.devic
             sc = (iv @ qv.T).squeeze(1).cpu()
             for bi, s in zip(batch_indices, sc):
                 scores[bi] = s.item()
-            batch_tensors.clear(); batch_indices.clear()
+            batch_tensors.clear()
+            batch_indices.clear()
     # Flush remainder
     if batch_tensors:
         inp = torch.cat(batch_tensors).to(device)
@@ -223,7 +239,8 @@ def rerank_cross_encoder(feats_df: pd.DataFrame, query: str, device: torch.devic
                     iv = model.encode_image(inp)
             else:
                 iv = model.encode_image(inp)
-        iv = iv.float(); iv = iv / (iv.norm(dim=1, keepdim=True) + 1e-12)
+        iv = iv.float()
+        iv = iv / (iv.norm(dim=1, keepdim=True) + 1e-12)
         sc = (iv @ qv.T).squeeze(1).cpu()
         for bi, s in zip(batch_indices, sc):
             scores[bi] = s.item()
@@ -243,7 +260,7 @@ def maybe_download_model(url: str, outfile: Path):
     if not url:
         return False
     try:
-        from urllib.request import urlopen, Request
+        from urllib.request import Request, urlopen
 
         outfile.parent.mkdir(parents=True, exist_ok=True)
         req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -270,9 +287,9 @@ def _maybe_download_and_unpack_bundle(bundle_url: str, index_dir: Path) -> bool:
     if not bundle_url:
         return False
     try:
-        from urllib.request import urlopen, Request
         import tarfile
         import zipfile
+        from urllib.request import Request, urlopen
 
         index_dir.mkdir(parents=True, exist_ok=True)
         tmp = index_dir / "bundle.tmp"
@@ -317,15 +334,39 @@ def main():
         default=None,
         help="Output CSV path. If not set and --query_id is provided, writes submissions/{query_id}.csv; else submissions/kis_<slug>.csv",
     )
-    ap.add_argument("--query_id", type=str, default=None, help="Official query identifier to name file as submissions/{query_id}.csv")
-    ap.add_argument("--task", type=str, choices=["kis", "vqa", "trake"], default="kis", help="Task format for CSV output")
-    ap.add_argument("--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes")
-    ap.add_argument("--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)")
-    ap.add_argument("--exp-model", type=str, default=None, help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)")
+    ap.add_argument(
+        "--query_id",
+        type=str,
+        default=None,
+        help="Official query identifier to name file as submissions/{query_id}.csv",
+    )
+    ap.add_argument(
+        "--task", type=str, choices=["kis", "vqa", "trake"], default="kis", help="Task format for CSV output"
+    )
+    ap.add_argument(
+        "--default-clip", action="store_true", help="Use default ViT-B-32 CLIP (512D) to match 512D indexes"
+    )
+    ap.add_argument(
+        "--experimental", action="store_true", help="Enable experimental model selection (advanced backbones)"
+    )
+    ap.add_argument(
+        "--exp-model",
+        type=str,
+        default=None,
+        help="Experimental model name or preset key (see config.EXPERIMENTAL_PRESETS)",
+    )
     ap.add_argument("--exp-pretrained", type=str, default=None, help="Override pretrained tag for experimental model")
     ap.add_argument("--answer", type=str, default=None, help="VQA: Answer text to include as third column")
-    ap.add_argument("--rerank", type=str, choices=["none", "lr", "ce"], default="lr", help="Reranking strategy: none, logistic (lr), or cross-encoder (ce)")
-    ap.add_argument("--events_json", type=Path, default=None, help="TRAKE: JSON array of event descriptions for alignment")
+    ap.add_argument(
+        "--rerank",
+        type=str,
+        choices=["none", "lr", "ce"],
+        default="lr",
+        help="Reranking strategy: none, logistic (lr), or cross-encoder (ce)",
+    )
+    ap.add_argument(
+        "--events_json", type=Path, default=None, help="TRAKE: JSON array of event descriptions for alignment"
+    )
     ap.add_argument("--model_path", type=Path, default=Path("./artifacts/reranker.joblib"))
     ap.add_argument("--model_url", type=str, default=None, help="Optional URL to download reranker if missing")
     ap.add_argument(
@@ -371,27 +412,28 @@ def main():
     # Load artifacts
     mapping = from_parquet(mapping_path).reset_index(drop=True)
     index = load_faiss(index_path)
-    
+
     # Auto-detect and use GPU if available
     try:
         import faiss
+
         if torch.cuda.is_available():
             try:
                 # Check if faiss-gpu is installed and index is compatible
-                if hasattr(faiss, 'StandardGpuResources'):
+                if hasattr(faiss, "StandardGpuResources"):
                     if isinstance(index, faiss.IndexHNSWFlat):
                         print("[INFO] HNSW index detected - keeping on CPU (not GPU-compatible)")
                     else:
                         res = faiss.StandardGpuResources()
                         index = faiss.index_cpu_to_gpu(res, 0, index)
                         print("[INFO] FAISS index automatically moved to GPU")
-            except Exception as e:
+            except Exception:
                 # Silent fallback to CPU
                 pass
     except ImportError:
         pass
     raw_docs, tokens_list = [], []
-    with open(corpus_path, "r", encoding="utf-8") as f:
+    with open(corpus_path, encoding="utf-8") as f:
         for line in f:
             j = json.loads(line)
             raw_docs.append(j["raw"])
@@ -400,7 +442,12 @@ def main():
 
     # Collect features
     feats = collect_candidates(
-        args.query, mapping, index, bm25, tokens_list, raw_docs,
+        args.query,
+        mapping,
+        index,
+        bm25,
+        tokens_list,
+        raw_docs,
         top_dense=400,
         top_bm25=400,
         use_default_clip=args.default_clip,
@@ -419,7 +466,15 @@ def main():
             model = bundle["model"]
             feat_names = bundle.get(
                 "feature_names",
-                ["dense_score", "bm25_score", "rank_dense", "rank_bm25", "token_overlap", "neighbor_consensus", "importance_score"],
+                [
+                    "dense_score",
+                    "bm25_score",
+                    "rank_dense",
+                    "rank_bm25",
+                    "token_overlap",
+                    "neighbor_consensus",
+                    "importance_score",
+                ],
             )
             for feat in feat_names:
                 if feat not in feats.columns:
@@ -481,8 +536,14 @@ def main():
         picked = []
         for ev in events:
             ev_feats = collect_candidates(
-                ev, mapping, index, bm25, tokens_list, raw_docs,
-                top_dense=800, top_bm25=800,
+                ev,
+                mapping,
+                index,
+                bm25,
+                tokens_list,
+                raw_docs,
+                top_dense=800,
+                top_bm25=800,
                 use_default_clip=args.default_clip,
                 experimental=args.experimental,
                 exp_model=args.exp_model,

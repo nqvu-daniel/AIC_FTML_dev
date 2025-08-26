@@ -40,7 +40,7 @@ dependencies:
   # Pip dependencies (not available through conda)
   - pip
   - pip:
-    - open_clip_torch>=2.24.0
+    - open-clip-torch>=2.24.0
     - rank_bm25>=0.2.2
     - lightgbm==4.5.0
     - decord>=0.6.0

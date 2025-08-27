@@ -1,25 +1,27 @@
+# Core dependencies with flexible versioning for Colab compatibility
 torch>=2.1
+torchvision
 open_clip_torch>=2.24.0
-faiss-cpu>=1.7.4  # Use faiss-gpu-cu12 for GPU training on cloud
+faiss-cpu>=1.7.4  # Use faiss-gpu for GPU training on cloud (auto-selected in notebook)
 pandas>=2.0
-numpy>=1.24,<2.0  # Fixed for compatibility
+# NumPy version managed by installation script to avoid conflicts
 Pillow>=10.0
 tqdm>=4.66
 pyyaml>=6.0
 
 rank_bm25>=0.2.2
 
-scikit-learn>=1.4
+scikit-learn  # Let pip resolver handle version for compatibility
 joblib>=1.3
 
-lightgbm==4.5.0 # optional; we use sklearn HGBT by default
-# Use conda opencv in environment.yml; avoid duplicate pip install
+lightgbm==4.5.0  # optional; we use sklearn HGBT by default
+# opencv-python managed by installation script to avoid NumPy conflicts
 
 # For intelligent frame sampling
 decord>=0.6.0
-scipy>=1.11.0
+scipy  # Let pip resolver handle version for compatibility
 
-# NEW: Academic-grade + Near-SOTA implementations  
+# Academic-grade + Near-SOTA implementations  
 transnetv2-pytorch>=1.0.5  # Academic-grade shot boundary detection (100-frame context)
 ultralytics>=8.0.0  # FastSAM (50x faster than SAM2)
 easyocr>=1.7.0      # Best OCR for multilingual support

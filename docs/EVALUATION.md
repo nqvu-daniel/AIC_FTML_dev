@@ -1,6 +1,6 @@
 # Official Evaluation and Submission
 
-This repository implements the official preliminary scoring you provided and includes tools to create properly named CSV submissions.
+This repository implements the official preliminary scoring with **academic-grade TransNet-V2 shot boundary detection** and includes tools to create properly named CSV submissions for AIC 2025.
 
 ## CSV Formats (per task)
 - KIS: `video_id,frame_idx`
@@ -13,13 +13,13 @@ Rules
 
 ## Generate Submissions (KIS/VQA)
 
-Option A — Single query
+Option A — Single query (Academic-Grade Pipeline)
 ```bash
-# KIS
-python src/retrieval/use.py --query "your search" --query_id q123
+# KIS with TransNet-V2 academic processing
+python search.py --query "your search" --k 100 --output submissions/q123.csv
 
-# VQA (3 columns)
-python src/retrieval/use.py --query "question text" --task vqa --answer "màu xanh" --query_id q_vqa_01
+# VQA with enhanced multimodal search  
+python search.py --query "question text" --k 100 --search_mode hybrid --output submissions/q_vqa_01.csv
 ```
 
 Option B — Batch from JSON spec
@@ -31,12 +31,13 @@ Option B — Batch from JSON spec
 ```
 
 ```bash
-python scripts/make_submission.py --spec queries.json --index_dir ./artifacts
+# Batch processing with academic-grade TransNet-V2 system
+python utils/make_submission.py --spec queries.json --index_dir ./artifacts
 ```
 
 Artifacts Bundle and Reranker URLs (optional)
 ```bash
-python scripts/make_submission.py --spec queries.json \
+python utils/make_submission.py --spec queries.json \
   --bundle_url https://host/artifacts_bundle.tar.gz \
   --model_url https://host/reranker.joblib
 ```

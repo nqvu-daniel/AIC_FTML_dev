@@ -50,13 +50,25 @@ class QueryProcessingPipeline:
         self.vector_engine = VectorSearchEngine(self.vector_index)
         self.text_engine = TextSearchEngine(self.text_index)
         self.hybrid_engine = HybridSearchEngine(self.vector_engine, self.text_engine)
-        
+
         # Initialize rerankers
         if self.enable_reranking:
             self.temporal_dedup = TemporalDeduplicator(radius=1)
             self.score_normalizer = ScoreNormalizer(method="minmax")
             self.diversity_reranker = DiversityReranker(diversity_weight=0.2)
             self.context_reranker = MultiFrameContextReranker(context_window=3, context_weight=0.1)
+
+        # Optional ML reranker (trained model)
+        self.ml_reranker = None
+        try:
+            import joblib  # noqa: F401
+            model_path = self.artifact_dir / "reranker.joblib"
+            if model_path.exists():
+                from joblib import load
+                self.ml_reranker = load(model_path)
+                print(f"Loaded ML reranker: {model_path}")
+        except Exception as e:
+            print(f"Warning: could not load ML reranker: {e}")
         
     def _load_indexes(self):
         """Load pre-built indexes"""
@@ -100,10 +112,10 @@ class QueryProcessingPipeline:
                query: str,
                search_mode: str = "hybrid",  # "vector", "text", "hybrid"
                k: int = 100,
-               vector_weight: float = 0.6,
-               text_weight: float = 0.4,
-               expand_query: bool = False,
-               enable_reranking: bool = None) -> List[SearchResult]:
+                vector_weight: float = 0.6,
+                text_weight: float = 0.4,
+                expand_query: bool = False,
+                enable_reranking: bool = None) -> List[SearchResult]:
         """Process query and return search results"""
         
         if enable_reranking is None:
@@ -125,20 +137,29 @@ class QueryProcessingPipeline:
         # Step 2: Search
         print(f"\n--- Step 2: Search ({search_mode}) ---")
         
+        overfetch = k * 2
         if search_mode == "vector":
-            results = self.vector_engine.process(query_data, k * 2)  # Over-fetch for reranking
+            results = self.vector_engine.process(query_data, overfetch)
         elif search_mode == "text":
-            results = self.text_engine.process(query_data, k * 2)
+            results = self.text_engine.process(query_data, overfetch)
         elif search_mode == "hybrid":
-            results = self.hybrid_engine.process(query_data, k * 2, vector_weight, text_weight)
+            results = self.hybrid_engine.process(query_data, overfetch, vector_weight, text_weight)
         else:
             raise ValueError(f"Unknown search mode: {search_mode}")
             
         print(f"Retrieved {len(results)} initial results")
-        
+
         # Step 3: Reranking and Post-processing
         if enable_reranking and results:
             print(f"\n--- Step 3: Reranking ---")
+
+            # Apply optional ML reranker first if available
+            if self.ml_reranker is not None:
+                try:
+                    results = self._apply_ml_reranker(query, query_data, results, overfetch)
+                    print("Applied ML reranker")
+                except Exception as e:
+                    print(f"Warning: ML reranker failed: {e}")
             
             # Temporal deduplication
             if self.enable_deduplication:
@@ -161,6 +182,67 @@ class QueryProcessingPipeline:
         
         print(f"\n✅ Query processing complete: {len(final_results)} final results")
         return final_results
+
+    def _apply_ml_reranker(self, query: str, query_data: QueryData, results: List[SearchResult], overfetch: int) -> List[SearchResult]:
+        """Re-score results using trained ML reranker if present"""
+        if self.ml_reranker is None:
+            return results
+
+        # Build lookup tables for vector/text ranks and scores for a consistent feature set
+        vec_lookup: Dict[tuple, tuple] = {}
+        txt_lookup: Dict[tuple, tuple] = {}
+
+        # Always compute both modalities for feature completeness
+        vec_candidates = self.vector_engine.process(query_data, overfetch)
+        for r, item in enumerate(vec_candidates):
+            vec_lookup[(item.video_id, item.frame_idx)] = (r, float(item.score))
+
+        txt_candidates = self.text_engine.process(query_data, overfetch)
+        for r, item in enumerate(txt_candidates):
+            txt_lookup[(item.video_id, item.frame_idx)] = (r, float(item.score))
+
+        # Build features for current result set
+        X: List[List[float]] = []
+        keys: List[tuple] = []
+        for res in results:
+            key = (res.video_id, int(res.frame_idx))
+            vrank, vscore = vec_lookup.get(key, (None, None))
+            trank, tscore = txt_lookup.get(key, (None, None))
+            # Feature ordering must match the training script
+            vr = float(vrank if vrank is not None else 1e6)
+            tr = float(trank if trank is not None else 1e6)
+            vs = float(vscore if vscore is not None else 0.0)
+            ts = float(tscore if tscore is not None else 0.0)
+            both = 1.0 if (vrank is not None and trank is not None) else 0.0
+            rrf = (1.0 / (60.0 + (vrank if vrank is not None else 1e6))) + \
+                  (1.0 / (60.0 + (trank if trank is not None else 1e6)))
+            X.append([vs, ts, vr, tr, both, rrf])
+            keys.append(key)
+
+        # Predict scores (use predict_proba if available)
+        try:
+            if hasattr(self.ml_reranker, "predict_proba"):
+                scores = self.ml_reranker.predict_proba(np.asarray(X, dtype=np.float32))[:, 1]
+            else:
+                scores = self.ml_reranker.decision_function(np.asarray(X, dtype=np.float32))
+        except Exception as e:
+            print(f"ML reranker scoring error: {e}")
+            return results
+
+        # Attach ML score and sort
+        rescored: List[SearchResult] = []
+        for res, s in zip(results, scores):
+            rescored.append(
+                SearchResult(
+                    video_id=res.video_id,
+                    frame_idx=res.frame_idx,
+                    score=float(s),
+                    metadata={**res.metadata, "ml_score": float(s)}
+                )
+            )
+
+        rescored.sort(key=lambda x: x.score, reverse=True)
+        return rescored
         
     def export_results(self, results: List[SearchResult], output_path: Path, 
                       format: str = "csv", include_metadata: bool = False) -> Path:

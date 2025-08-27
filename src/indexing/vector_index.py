@@ -7,7 +7,24 @@ from typing import List, Dict, Any, Tuple, Optional
 import pandas as pd
 
 from ..core.base import Index
-from utils import save_faiss, load_faiss, to_parquet, from_parquet, normalize_rows
+
+# Import utilities from root directory
+import os
+import sys
+root_path = os.path.join(os.path.dirname(__file__), '..', '..')
+sys.path.insert(0, root_path)
+
+# Import utils from root utils.py file
+import importlib.util
+utils_spec = importlib.util.spec_from_file_location("utils", os.path.join(root_path, "utils.py"))
+utils = importlib.util.module_from_spec(utils_spec)
+utils_spec.loader.exec_module(utils)
+
+save_faiss = utils.save_faiss
+load_faiss = utils.load_faiss
+to_parquet = utils.to_parquet
+from_parquet = utils.from_parquet
+normalize_rows = utils.normalize_rows
 
 
 class FAISSIndex(Index):

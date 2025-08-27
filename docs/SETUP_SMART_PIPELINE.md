@@ -1,51 +1,66 @@
-# Smart Pipeline Setup Guide 🚀
+# Academic-Grade Pipeline Setup Guide 🏆
 
-The pipeline has been upgraded with **CLIP-guided frame sampling** and **SigLIP2** support for better retrieval performance.
+The pipeline has been upgraded with **academic-grade TransNet-V2 shot boundary detection** + **intelligent sampling enhancements** + **SigLIP2** support for superior retrieval performance.
 
 ## 🔧 Requirements
 
 Install dependencies first:
 
 ```bash
-# Install Python packages
+# Install academic-grade packages
 pip install -r requirements.txt
 
+# Key academic dependencies:
+pip install transnetv2-pytorch>=1.0.5 ffmpeg-python ultralytics transformers easyocr
+
 # Or for Colab:
-!pip install open_clip_torch faiss-cpu pandas numpy Pillow tqdm scikit-learn rank_bm25 scipy pyarrow
+!pip install transnetv2-pytorch open_clip_torch faiss-cpu pandas numpy Pillow tqdm scikit-learn rank_bm25 scipy pyarrow ultralytics transformers easyocr ffmpeg-python
 ```
 
 ## 🎯 Quick Start
 
-### 1. Full Pipeline (Sampling + Indexing)
+### 1. Full Academic-Grade Pipeline 
 ```bash
-# With SigLIP2 (recommended for T4)
-python scripts/smart_pipeline.py \
+# Academic-grade TransNet-V2 + SigLIP2 (recommended)
+python pipeline.py build \
     --video_dir /path/to/videos \
     --target_frames 50 \
-    --experimental --exp_model siglip2-l16-256
+    --use_transnet \
+    --enable_ocr --enable_captions
 
-# Default model
-python scripts/smart_pipeline.py \
-    --video_dir /path/to/videos \
-    --target_frames 30
-```
-
-### 2. Step-by-Step Pipeline
-
-**Step 1: Frame Sampling Only**
-```bash
-python scripts/smart_pipeline.py \
+# Pure intelligent sampling (disable TransNet-V2)  
+python pipeline.py build \
     --video_dir /path/to/videos \
     --target_frames 50 \
-    --sampling_only
+    --disable_transnet
+
+# Full academic stack with all features
+python pipeline.py build \
+    --video_dir /path/to/videos \
+    --target_frames 50 \
+    --use_transnet \
+    --enable_ocr --enable_captions --enable_segmentation \
+    --use_flat
 ```
 
-**Step 2: Indexing Only** (after sampling)
+### 2. Academic Search & Evaluation
+
+**Search with Academic-Grade System**
 ```bash
-python scripts/smart_pipeline.py \
-    --video_dir /path/to/videos \
-    --artifact_dir ./artifacts \
-    --indexing_only
+# Hybrid search with TransNet-V2 processed keyframes
+python search.py --query "news anchor speaking" --search_mode hybrid --k 100
+
+# Vector-only search
+python search.py --query "outdoor scene" --search_mode vector --k 100 --output results.csv
+
+# Text search with BM25
+python search.py --query "weather forecast" --search_mode text --k 100
+```
+
+**Contest Submission Generation**
+```bash
+# Generate CSV submissions for AIC 2025
+python utils/make_submission.py --spec queries.json --index_dir ./artifacts
 ```
 
 ### 3. Traditional Pipeline (now with CLIP sampling)

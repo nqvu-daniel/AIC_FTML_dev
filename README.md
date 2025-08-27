@@ -1,8 +1,10 @@
-# 🎬 AIC FTML — Clean Video Retrieval System
+# 🎬 AIC FTML — Academic-Grade Video Retrieval System
 
-A **completely reorganized** intelligent video processing system for the AIC 2024 Event Retrieval challenge. Features clean modular architecture, advanced frame sampling, and hybrid search capabilities.
+A **completely reorganized** intelligent video processing system for the AIC 2025 Event Retrieval challenge. Features **academic-grade TransNet-V2 shot boundary detection**, clean modular architecture, and hybrid search capabilities optimized for competition excellence.
 
-> **🆕 NEW ARCHITECTURE:** This codebase has been completely reorganized into a clean, modular structure. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for complete details.
+> **🏆 ACADEMIC EXCELLENCE:** Now includes TransNet-V2 for academic-grade shot boundary detection + intelligent sampling enhancements. See [`ACADEMIC_TRANSNET_INTEGRATION.md`](ACADEMIC_TRANSNET_INTEGRATION.md) for complete details.
+
+> **🆕 NEW ARCHITECTURE:** This codebase has been completely reorganized into a clean, modular structure. See [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) for complete details.
 
 ## Key Features
 
@@ -13,13 +15,13 @@ A **completely reorganized** intelligent video processing system for the AIC 202
 - **Progress tracking**: Real-time logging with timing and error handling
 - **Resume capability**: Skips already processed components to save time
 
-### Advanced Intelligent Sampling
-Multiple sophisticated algorithms replace basic uniform sampling:
-- **Visual complexity scoring**: Edge density, color diversity, texture analysis
-- **Scene change detection**: Multi-method scene boundary identification
-- **Motion analysis**: Optical flow-based movement tracking
-- **Semantic importance**: Context-aware frame selection with temporal weighting
-- **Smart deduplication**: Ensures minimum gaps while maximizing coverage
+### Academic-Grade Keyframe Extraction
+**TransNet-V2 Shot Boundary Detection** (default) + intelligent sampling enhancements:
+- **TransNet-V2**: 100-frame context neural architecture, θ=0.5 academic standard
+- **Intelligent refinement**: Visual complexity scoring, motion analysis, scene change detection
+- **Enhanced selection**: Multi-metric fusion (boundary + complexity + motion)
+- **Temporal constraints**: Smart deduplication with minimum gaps
+- **Fallback support**: Graceful fallback to pure intelligent sampling if needed
 
 ### Hybrid Search Architecture
 - **Dense retrieval**: CLIP-based visual similarity matching
@@ -33,8 +35,10 @@ Multiple sophisticated algorithms replace basic uniform sampling:
 ```
 src/
 ├── core/               # Base classes and data structures
-├── preprocessing/      # Data preprocessing pipeline  
-├── encoders/          # CLIP, SAM2, OCR encoders
+├── preprocessing/      # TransNet-V2 + intelligent sampling pipeline  
+│   ├── transnet_processor.py    # Academic-grade shot boundary detection
+│   └── video_processor.py       # Enhanced intelligent sampling
+├── encoders/          # CLIP, FastSAM, BLIP-2, EasyOCR encoders
 ├── indexing/          # Vector (FAISS) & text (BM25) indexes  
 ├── query/             # Query processing pipeline
 ├── fusion/            # Search fusion and reranking
@@ -45,8 +49,11 @@ src/
 
 ### 1. Build Index
 ```bash
-# New unified pipeline (replaces smart_pipeline.py)
-python pipeline.py build --video_dir /path/to/videos --target_frames 50
+# Academic-grade TransNet-V2 processing (default)
+python pipeline.py build --video_dir /path/to/videos --target_frames 50 --enable_ocr --enable_captions
+
+# Alternative: Pure intelligent sampling (disable TransNet-V2)
+python pipeline.py build --video_dir /path/to/videos --disable_transnet --target_frames 50
 
 # Or for end-to-end processing
 python pipeline.py end2end --video_dir /data --query "person walking"
@@ -68,19 +75,23 @@ python search.py --query "outdoor scene" --expand_query --output results.csv
 conda activate aic-ftml-gpu  # or: conda activate aic-ftml
 ```
 
-### Process Your Dataset (Updated Commands)
+### Process Your Dataset (Academic-Grade Commands)
 ```bash
-# New unified pipeline - replaces smart_pipeline.py
-python pipeline.py build --video_dir /path/to/your/dataset --target_frames 50
+# Academic-grade TransNet-V2 processing (default)
+python pipeline.py build --video_dir /path/to/your/dataset --target_frames 50 --enable_ocr --enable_captions
 
-# Advanced options
-python pipeline.py build --video_dir /data --batch_size 64 --use_flat --model_name ViT-L-14
+# Advanced academic options with all features
+python pipeline.py build --video_dir /data --target_frames 50 --use_transnet --enable_ocr --enable_captions --enable_segmentation --use_flat
+
+# Pure intelligent sampling (disable TransNet-V2)
+python pipeline.py build --video_dir /data --disable_transnet --target_frames 50
 ```
 
 ### Linux CLI Deployment
 - Prereqs: Linux with conda (Miniconda/Anaconda). GPU optional (CUDA 11.8+/driver if using GPU env).
 - Install env: `./setup_env.sh --gpu` (or `--cpu`), then `conda activate aic-ftml-gpu` (or `aic-ftml`).
-- Run end‑to‑end via CLI: `python pipeline.py end2end --video_dir /data/aic2024 --query "your search"`.
+- Run academic-grade pipeline: `python pipeline.py build --video_dir /data/aic2025 --use_transnet --enable_ocr --enable_captions`.
+- Search with academic system: `python search.py --query "your search" --search_mode hybrid --k 100`.
 - No web service is included by default; this project is CLI‑first. A thin API can be added if needed.
 
 ### GPU Support & Requirements
@@ -765,17 +776,9 @@ python scripts/prepare_pipeline_dir.py --outdir my_pipeline --artifact_dir ./art
 ```
 
 ### Colab Notebooks
-**`notebooks/colab_pipeline.ipynb`** - Complete development pipeline:
-- Host inference: Uses pre-built artifacts for instant queries
-- Dev pipeline: Downloads dataset, builds artifacts, trains reranker (optional)
-- Auto-detects GPU and builds flat index for GPU acceleration
-- Outputs ready-to-deploy `my_pipeline/` directory
-
-**`notebooks/colab_official_eval.ipynb`** - Official evaluation & submission:
-- Per-query CSV generation with proper naming (`{query_id}.csv`)
-- Supports KIS/VQA tasks with ground truth evaluation
-- Auto-detects GPU and uses it for faster search
-- Lighter notebook focused on inference and scoring
+- `notebooks/AIC_FTML_Colab_AllInOne_Fixed.ipynb` — All‑in‑one Colab for dataset download (L21/L22 filter), indexing, training, and querying
+- `notebooks/colab_pipeline_old.ipynb` — Legacy development pipeline (kept for reference)
+- `notebooks/colab_official_eval_old.ipynb` — Legacy evaluation & submission
 
 ## Performance Expectations
 

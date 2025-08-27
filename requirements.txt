@@ -1,8 +1,8 @@
 torch>=2.1
 open_clip_torch>=2.24.0
-faiss-cpu>=1.7.4
+faiss-cpu>=1.7.4  # Use faiss-gpu-cu12 for GPU training on cloud
 pandas>=2.0
-numpy>=1.24
+numpy>=1.24,<2.0  # Fixed for compatibility
 Pillow>=10.0
 tqdm>=4.66
 pyyaml>=6.0
@@ -19,9 +19,11 @@ lightgbm==4.5.0 # optional; we use sklearn HGBT by default
 decord>=0.6.0
 scipy>=1.11.0
 
-# NEW: Near-SOTA easy-to-implement alternatives
+# NEW: Academic-grade + Near-SOTA implementations  
+transnetv2-pytorch>=1.0.5  # Academic-grade shot boundary detection (100-frame context)
 ultralytics>=8.0.0  # FastSAM (50x faster than SAM2)
 easyocr>=1.7.0      # Best OCR for multilingual support
 transformers>=4.30.0  # BLIP-2 image captioning
 accelerate>=0.20.0    # For transformer models
 pyarrow>=14.0.0
+ffmpeg-python       # Required for TransNet-V2 video processing

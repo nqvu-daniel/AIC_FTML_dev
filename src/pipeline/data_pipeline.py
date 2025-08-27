@@ -8,6 +8,7 @@ import numpy as np
 
 from ..core.base import VideoData
 from ..preprocessing.video_processor import VideoProcessor, KeyframeExtractor, KeyframeSaver
+from ..preprocessing.transnet_processor import TransNetKeyframeExtractor
 from ..preprocessing.text_processor import MetadataProcessor, TextCorpusBuilder, OCRProcessor, CaptionProcessor
 from ..encoders.clip_encoder import CLIPImageEncoder
 from ..indexing.vector_index import FAISSIndex, VideoSemanticIndex
@@ -28,7 +29,8 @@ class DataPreprocessingPipeline:
                  pretrained: str = None,
                  enable_ocr: bool = True,
                  enable_captions: bool = True,
-                 enable_segmentation: bool = False):
+                 enable_segmentation: bool = False,
+                 use_transnet: bool = True):
         
         self.output_dir = Path(output_dir)
         self.artifact_dir = Path(artifact_dir)
@@ -38,6 +40,7 @@ class DataPreprocessingPipeline:
         self.enable_ocr = enable_ocr
         self.enable_captions = enable_captions
         self.enable_segmentation = enable_segmentation
+        self.use_transnet = use_transnet
         
         # Create directories
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -46,7 +49,15 @@ class DataPreprocessingPipeline:
         
         # Initialize components
         self.video_processor = VideoProcessor()
-        self.keyframe_extractor = KeyframeExtractor(target_frames=target_frames)
+        
+        # Choose keyframe extractor: TransNet-V2 for academic excellence or basic intelligent sampling
+        if self.use_transnet:
+            print("🎬 Using TransNet-V2 for academic-grade shot boundary detection")
+            self.keyframe_extractor = TransNetKeyframeExtractor(target_frames=target_frames)
+        else:
+            print("🧠 Using intelligent sampling approach")
+            self.keyframe_extractor = KeyframeExtractor(target_frames=target_frames)
+            
         self.keyframe_saver = KeyframeSaver(self.keyframes_dir)
         self.metadata_processor = MetadataProcessor()
         self.corpus_builder = TextCorpusBuilder()

@@ -17,7 +17,8 @@ class UnifiedVideoPipeline:
                  output_dir: Path = None,
                  artifact_dir: Path = None,
                  model_name: str = None,
-                 pretrained: str = None):
+                 pretrained: str = None,
+                 use_transnet: bool = True):
         
         # Set default directories
         self.output_dir = Path(output_dir) if output_dir else Path("./pipeline_output")
@@ -26,6 +27,7 @@ class UnifiedVideoPipeline:
         # Model configuration
         self.model_name = model_name or config.MODEL_NAME
         self.pretrained = pretrained or config.MODEL_PRETRAINED
+        self.use_transnet = use_transnet
         
         # Pipeline components (initialized on demand)
         self.data_pipeline: Optional[DataPreprocessingPipeline] = None
@@ -38,12 +40,18 @@ class UnifiedVideoPipeline:
                     use_flat: bool = False,
                     enable_ocr: bool = True,
                     enable_captions: bool = True,
-                    enable_segmentation: bool = False) -> Dict[str, Any]:
+                    enable_segmentation: bool = False,
+                    use_transnet: bool = None) -> Dict[str, Any]:
         """Build search index from video dataset"""
         
         print(f"\n🚀 Starting Data Preprocessing Pipeline")
         print(f"Video paths: {len(video_paths)} videos")
         print(f"Model: {self.model_name} ({self.pretrained})")
+        
+        # Use TransNet setting from parameter or instance default
+        transnet_setting = use_transnet if use_transnet is not None else self.use_transnet
+        
+        print(f"🎬 Keyframe extraction: {'TransNet-V2 (academic)' if transnet_setting else 'Intelligent sampling'}")
         
         # Initialize data pipeline
         self.data_pipeline = DataPreprocessingPipeline(
@@ -56,7 +64,8 @@ class UnifiedVideoPipeline:
             pretrained=self.pretrained,
             enable_ocr=enable_ocr,
             enable_captions=enable_captions,
-            enable_segmentation=enable_segmentation
+            enable_segmentation=enable_segmentation,
+            use_transnet=transnet_setting
         )
         
         # Process videos
@@ -169,7 +178,11 @@ def main():
     parser.add_argument("--batch_size", type=int, default=32, help="Processing batch size")
     parser.add_argument("--use_flat", action="store_true", help="Use flat FAISS index")
     
-    # NEW: Enable new near-SOTA features
+    # Academic keyframe extraction
+    parser.add_argument("--use_transnet", action="store_true", default=True, help="Use TransNet-V2 for academic-grade shot boundary detection (default)")
+    parser.add_argument("--disable_transnet", action="store_true", help="Disable TransNet-V2, use intelligent sampling instead")
+    
+    # NEW: Enable new near-SOTA features  
     parser.add_argument("--enable_ocr", action="store_true", help="Enable EasyOCR text extraction")
     parser.add_argument("--enable_captions", action="store_true", help="Enable BLIP-2 image captioning")
     parser.add_argument("--enable_segmentation", action="store_true", help="Enable FastSAM segmentation")
@@ -185,12 +198,16 @@ def main():
     
     args = parser.parse_args()
     
+    # Determine TransNet-V2 setting  
+    use_transnet = not args.disable_transnet  # Default: True (academic excellence)
+    
     # Initialize pipeline
     pipeline = UnifiedVideoPipeline(
         output_dir=args.output_dir,
         artifact_dir=args.artifact_dir,
         model_name=args.model_name,
-        pretrained=args.pretrained
+        pretrained=args.pretrained,
+        use_transnet=use_transnet
     )
     
     if args.command == "build":
@@ -218,7 +235,8 @@ def main():
             use_flat=args.use_flat,
             enable_ocr=enable_ocr,
             enable_captions=enable_captions,
-            enable_segmentation=args.enable_segmentation
+            enable_segmentation=args.enable_segmentation,
+            use_transnet=use_transnet
         )
         
     elif args.command == "search":

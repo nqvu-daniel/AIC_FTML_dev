@@ -237,10 +237,12 @@ def extract_archive(archive: Path, out_dir: Path) -> Path:
     return dest
 
 
-def filter_rows(rows: List[Tuple[str, str]], only: str) -> List[Tuple[str, str]]:
-    if only == "all":
-        return rows
-    def ok(name: str) -> bool:
+def filter_rows(rows: List[Tuple[str, str]], only: str, videos: List[str] | None = None) -> List[Tuple[str, str]]:
+    """Filter CSV rows by type and optional L## collections (e.g., ['L21','L22']).
+
+    Always include essential metadata archives (map-keyframes, media-info, objects, clip-features).
+    """
+    def type_ok(name: str) -> bool:
         s = name.lower()
         if only == "videos":
             return "video" in s
@@ -253,7 +255,22 @@ def filter_rows(rows: List[Tuple[str, str]], only: str) -> List[Tuple[str, str]]
         if only == "objects":
             return "object" in s
         return True
-    return [(n, u) for n, u in rows if ok(n)]
+
+    if videos is None or len(videos) == 0:
+        return [(n, u) for n, u in rows if type_ok(n)]
+
+    vids_upper = {v.upper() for v in videos}
+    essentials = ("MAP-KEYFRAMES", "MEDIA-INFO", "OBJECTS", "CLIP-FEATURES")
+
+    def video_ok(name: str) -> bool:
+        up = name.upper()
+        # Always include essential bundles
+        if any(e in up for e in essentials):
+            return True
+        # Otherwise require an L## tag match in the filename
+        return any(v in up for v in vids_upper)
+
+    return [(n, u) for n, u in rows if type_ok(n) and video_ok(n)]
 
 
 def main():
@@ -261,6 +278,7 @@ def main():
     ap.add_argument("--dataset_root", type=Path, required=True)
     ap.add_argument("--csv", type=Path, default=Path("AIC_2025_dataset_download_link.csv"))
     ap.add_argument("--only", choices=["all", "videos", "keyframes", "features", "meta", "objects"], default="all")
+    ap.add_argument("--videos", nargs="*", default=None, help="Restrict to L-collections (e.g., L21 L22)")
     ap.add_argument("--skip-existing", action="store_true", help="Skip downloads if file already exists in downloads/")
     ap.add_argument("--keep-downloads", action="store_true", help="Keep archives after extraction (default removes them)")
     args = ap.parse_args()
@@ -273,7 +291,7 @@ def main():
     ensure_dir(extracted_tmp)
 
     rows = read_links(args.csv)
-    rows = filter_rows(rows, args.only)
+    rows = filter_rows(rows, args.only, args.videos)
     if not rows:
         print(f"[WARN] No matching files found for --only={args.only}")
         return 0
@@ -311,4 +329,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

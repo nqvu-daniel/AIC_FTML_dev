@@ -9,8 +9,22 @@ from typing import List, Union, Dict, Any
 from tqdm import tqdm
 
 from ..core.base import Encoder, VideoData
-from utils import load_image, normalize_rows
+
+# Import utilities from root directory  
+import os
+import sys
+root_path = os.path.join(os.path.dirname(__file__), '..', '..')
+sys.path.insert(0, root_path)
+
+# Import config and utils from root
 import config
+import importlib.util
+utils_spec = importlib.util.spec_from_file_location("utils", os.path.join(root_path, "utils.py"))
+utils = importlib.util.module_from_spec(utils_spec)
+utils_spec.loader.exec_module(utils)
+
+load_image = utils.load_image
+normalize_rows = utils.normalize_rows
 
 
 class CLIPImageEncoder(Encoder):

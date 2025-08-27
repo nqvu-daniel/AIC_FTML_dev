@@ -1,41 +1,43 @@
-# Simplified Colab requirements that avoid NumPy conflicts
-# This file is optimized for Google Colab environments
+# Pinned versions for guaranteed compatibility in Colab
+# This file contains exact versions that work together without conflicts
 
-# Core ML packages (compatible versions)
-torch>=2.1.0
-torchvision>=0.16.0
-numpy>=1.24.0
+# Scientific computing base stack
+numpy==1.24.4
+scipy==1.11.4
+scikit-learn==1.4.2
+joblib==1.3.2
+
+# Core ML packages
+torch==2.1.2
+torchvision==0.16.2
+pandas==2.0.3
+Pillow==10.0.1
+opencv-python==4.8.1.78
 
 # Academic TransNet-V2 (core requirement)
-transnetv2-pytorch>=1.0.5
-ffmpeg-python
+transnetv2-pytorch==1.0.5
+ffmpeg-python==0.2.0
 
 # CLIP and embeddings  
-open_clip_torch>=2.24.0
+open_clip_torch==2.24.0
 
 # Data processing
-pandas>=2.0.0
-pillow>=10.0.0
-opencv-python>=4.8.0
-tqdm>=4.66.0
-pyyaml>=6.0.0
+tqdm==4.66.1
+pyyaml==6.0.1
+pyarrow==14.0.2
 
 # Search and indexing
-faiss-cpu>=1.7.4
-rank_bm25>=0.2.2
-scikit-learn>=1.3.0
-scipy>=1.11.0
-joblib>=1.3.0
-pyarrow>=14.0.0
+faiss-cpu==1.7.4    # Use faiss-gpu==1.7.4 for GPU
+rank_bm25==0.2.2
+decord==0.6.0
 
 # Visualization
-matplotlib>=3.7.0
-seaborn>=0.12.0
-ipywidgets>=8.0.0
+matplotlib==3.7.4
+seaborn==0.12.2
+ipywidgets==8.1.1
 
 # Enhanced features (optional)
-ultralytics>=8.0.0
-easyocr>=1.7.0
-transformers>=4.30.0
-accelerate>=0.20.0
-decord>=0.6.0
+ultralytics==8.0.196
+easyocr==1.7.0
+transformers==4.30.2
+accelerate==0.20.3

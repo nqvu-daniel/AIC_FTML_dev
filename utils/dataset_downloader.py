@@ -35,7 +35,70 @@ from pathlib import Path
 from typing import Iterable, List, Tuple
 
 
-def read_links(csv_path: Path) -> List[Tuple[str, str]]:
+def filter_csv_for_videos(csv_path: Path, video_list: List[str], output_path: Path) -> bool:
+    """Filter the CSV file to only include entries for specified videos + essential metadata"""
+    if not csv_path.exists():
+        print(f"❌ CSV file not found: {csv_path}")
+        return False
+
+    filtered_rows = []
+    total_rows = 0
+    
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        header = next(reader, None)
+        if header:
+            filtered_rows.append(header)
+
+        for row in reader:
+            total_rows += 1
+            if not row or len(row) < 2:
+                continue
+            
+            # Get filename from row (usually last or second-to-last column)
+            filename = row[-2].strip() if len(row) >= 2 else ""
+            filename_upper = filename.upper()
+
+            # Always include essential metadata files (needed for all videos)
+            essential_files = [
+                'MAP-KEYFRAMES-AIC25-B1.ZIP',
+                'MEDIA-INFO-AIC25-B1.ZIP', 
+                'OBJECTS-AIC25-B1.ZIP',
+                'CLIP-FEATURES-32-AIC25-B1.ZIP',
+                'CLIP-FEATURES-AIC25-B1.ZIP'
+            ]
+
+            is_essential = any(essential in filename_upper for essential in essential_files)
+            is_target_video = any(vid.upper() in filename_upper for vid in video_list)
+
+            if is_essential or is_target_video:
+                filtered_rows.append(row)
+
+    # Write filtered CSV
+    ensure_dir(output_path.parent)
+    with open(output_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerows(filtered_rows)
+
+    print(f"📊 Filtered CSV: {len(filtered_rows)-1}/{total_rows} entries for videos {video_list} + essential metadata")
+    return True
+
+
+def read_links(csv_path: Path, video_filter: List[str] = None) -> List[Tuple[str, str]]:
+    """Read CSV with optional video filtering for academic-grade processing"""
+    
+    # If video filter provided, create filtered CSV first
+    if video_filter:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as tmp_csv:
+            filtered_csv_path = Path(tmp_csv.name)
+        
+        if not filter_csv_for_videos(csv_path, video_filter, filtered_csv_path):
+            return []
+        
+        # Use filtered CSV for reading
+        csv_path = filtered_csv_path
+    
     rows = []
     with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
@@ -63,6 +126,14 @@ def read_links(csv_path: Path) -> List[Tuple[str, str]]:
             if not name or not url:
                 continue
             rows.append((name, url))
+    
+    # Clean up temporary file if created
+    if video_filter:
+        try:
+            os.unlink(filtered_csv_path)
+        except:
+            pass
+    
     return rows
 
 
@@ -274,14 +345,32 @@ def filter_rows(rows: List[Tuple[str, str]], only: str, videos: List[str] | None
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Download and arrange AIC 2025 dataset")
-    ap.add_argument("--dataset_root", type=Path, required=True)
-    ap.add_argument("--csv", type=Path, default=Path("AIC_2025_dataset_download_link.csv"))
+    ap = argparse.ArgumentParser(description="Academic-grade AIC 2025 dataset downloader with CSV filtering")
+    ap.add_argument("--dataset_root", type=Path, required=True, help="Root directory for dataset")
+    ap.add_argument("--csv", type=Path, default=Path("AIC_2025_dataset_download_link.csv"), help="CSV file with download links")
     ap.add_argument("--only", choices=["all", "videos", "keyframes", "features", "meta", "objects"], default="all")
     ap.add_argument("--videos", nargs="*", default=None, help="Restrict to L-collections (e.g., L21 L22)")
-    ap.add_argument("--skip-existing", action="store_true", help="Skip downloads if file already exists in downloads/")
-    ap.add_argument("--keep-downloads", action="store_true", help="Keep archives after extraction (default removes them)")
+    ap.add_argument("--skip-existing", action="store_true", help="Skip downloads if file already exists")
+    ap.add_argument("--keep-downloads", action="store_true", help="Keep archives after extraction")
+    ap.add_argument("--test-mode", action="store_true", help="Enable test mode (L21 L22 only)")
     args = ap.parse_args()
+
+    # Handle test mode
+    if args.test_mode and not args.videos:
+        args.videos = ['L21', 'L22']
+        print("🧪 TEST MODE ENABLED: Only processing L21-L22")
+
+    print("🏗️ Academic-Grade AIC Dataset Downloader")
+    print("=" * 50)
+    print(f"📁 Dataset root: {args.dataset_root}")
+    print(f"📄 CSV file: {args.csv}")
+    print(f"🎯 Video filter: {args.videos or 'All videos'}")
+    print(f"📦 Content filter: {args.only}")
+
+    if not args.csv.exists():
+        print(f"❌ CSV file not found: {args.csv}")
+        print("Make sure the AIC_2025_dataset_download_link.csv file exists in the current directory")
+        return 1
 
     root = args.dataset_root
     ensure_dir(root)
@@ -290,30 +379,51 @@ def main():
     ensure_dir(downloads)
     ensure_dir(extracted_tmp)
 
-    rows = read_links(args.csv)
+    # Use enhanced CSV reading with video filtering
+    print(f"📊 Reading and filtering CSV...")
+    rows = read_links(args.csv, args.videos)
     rows = filter_rows(rows, args.only, args.videos)
+    
     if not rows:
-        print(f"[WARN] No matching files found for --only={args.only}")
+        print(f"⚠️ No matching files found for --only={args.only} --videos={args.videos}")
         return 0
 
-    for name, url in rows:
+    print(f"📦 Found {len(rows)} files to download")
+
+    # Download and extract with progress
+    import time
+    start_time = time.time()
+    
+    for i, (name, url) in enumerate(rows, 1):
+        print(f"\n📥 [{i}/{len(rows)}] Processing: {name}")
+        
         out = downloads / name
         if out.exists() and args.skip_existing:
-            print(f"[SKIP] {name} (exists)")
+            print(f"⏭️ Skipping (already exists)")
         else:
-            download(url, out)
+            try:
+                download(url, out)
+            except Exception as e:
+                print(f"❌ Download failed: {e}")
+                continue
 
         try:
+            print(f"📦 Extracting...")
             extracted = extract_archive(out, extracted_tmp)
+            sort_extracted_to_layout(extracted, root)
+            print(f"✅ Extracted and organized")
         except Exception as e:
-            print(f"[WARN] Failed to extract {name}: {e}")
+            print(f"❌ Extraction failed: {e}")
             continue
-        sort_extracted_to_layout(extracted, root)
+            
         if not args.keep_downloads:
             try:
                 out.unlink()
             except Exception:
                 pass
+
+    elapsed = time.time() - start_time
+    print(f"\n🎉 Dataset preparation completed in {elapsed:.1f} seconds")
 
     print("[OK] Dataset prepared at:", root)
     print("Layout:")

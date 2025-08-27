@@ -1,6 +1,8 @@
-# AI Challenge 2024 — Intelligent Video Retrieval System
+# 🎬 AIC FTML — Clean Video Retrieval System
 
-An automated, intelligent video processing system for the AIC 2024 Event Retrieval challenge. Features one-command automation, advanced frame sampling, and hybrid search capabilities.
+A **completely reorganized** intelligent video processing system for the AIC 2024 Event Retrieval challenge. Features clean modular architecture, advanced frame sampling, and hybrid search capabilities.
+
+> **🆕 NEW ARCHITECTURE:** This codebase has been completely reorganized into a clean, modular structure. See [`ARCHITECTURE.md`](ARCHITECTURE.md) for complete details.
 
 ## Key Features
 
@@ -26,22 +28,37 @@ Multiple sophisticated algorithms replace basic uniform sampling:
 - **Re-ranking**: Learned models for improved precision
 - **Multi-frame context**: Temporal re-scoring for better accuracy
 
-## Quick Start
+## 🏗 New Clean Architecture
 
-### Competition Host Quickstart (1–2 commands)
-Evaluating on the fixed competition dataset. No frame extraction or indexing required for hosts.
+```
+src/
+├── core/               # Base classes and data structures
+├── preprocessing/      # Data preprocessing pipeline  
+├── encoders/          # CLIP, SAM2, OCR encoders
+├── indexing/          # Vector (FAISS) & text (BM25) indexes  
+├── query/             # Query processing pipeline
+├── fusion/            # Search fusion and reranking
+└── pipeline/          # High-level orchestrators
+```
 
+## 🚀 Quick Start (New Interface)
+
+### 1. Build Index
 ```bash
-# 1) Create and use the environment (GPU or CPU)
-./setup_env.sh --gpu   # or: ./setup_env.sh --cpu
-conda activate aic-ftml-gpu  # or: aic-ftml
+# New unified pipeline (replaces smart_pipeline.py)
+python pipeline.py build --video_dir /path/to/videos --target_frames 50
 
-# 2) Run a query (writes Top-100 CSV → submissions/)
-python src/retrieval/use.py --query "your search"
+# Or for end-to-end processing
+python pipeline.py end2end --video_dir /data --query "person walking"
+```
 
-# Optional for first run: auto-fetch a prebuilt artifacts bundle (index + mapping + corpus + model)
-python src/retrieval/use.py --query "your search" \
-  --bundle_url <ARTIFACTS_BUNDLE_URL>
+### 2. Search
+```bash
+# New clean search interface  
+python search.py --query "person walking" --search_mode hybrid --k 100
+
+# With query expansion and custom output
+python search.py --query "outdoor scene" --expand_query --output results.csv
 ```
 
 ### Setup Environment
@@ -51,19 +68,19 @@ python src/retrieval/use.py --query "your search" \
 conda activate aic-ftml-gpu  # or: conda activate aic-ftml
 ```
 
-### Process Your Dataset
+### Process Your Dataset (Updated Commands)
 ```bash
-# One command processes everything automatically
-python smart_pipeline.py /path/to/your/dataset
+# New unified pipeline - replaces smart_pipeline.py
+python pipeline.py build --video_dir /path/to/your/dataset --target_frames 50
 
-# With options
-python smart_pipeline.py /path/to/your/dataset --workers 8 --no-gpu
+# Advanced options
+python pipeline.py build --video_dir /data --batch_size 64 --use_flat --model_name ViT-L-14
 ```
 
 ### Linux CLI Deployment
 - Prereqs: Linux with conda (Miniconda/Anaconda). GPU optional (CUDA 11.8+/driver if using GPU env).
 - Install env: `./setup_env.sh --gpu` (or `--cpu`), then `conda activate aic-ftml-gpu` (or `aic-ftml`).
-- Run end‑to‑end via CLI: `python smart_pipeline.py /data/aic2024`.
+- Run end‑to‑end via CLI: `python pipeline.py end2end --video_dir /data/aic2024 --query "your search"`.
 - No web service is included by default; this project is CLI‑first. A thin API can be added if needed.
 
 ### GPU Support & Requirements
@@ -73,26 +90,19 @@ python smart_pipeline.py /path/to/your/dataset --workers 8 --no-gpu
 - **Index types**: Flat index for GPU acceleration, HNSW for CPU-only
 - **Colab**: Both notebooks auto-detect GPU and install appropriate FAISS version
 
-### Search and Export
+### Search and Export (New Interface)
 ```bash
-# One-shot search (recommended for users). Writes Top-100 CSV to submissions/
-python src/retrieval/use.py --query "your search description"
+# Simple search with new clean interface
+python search.py --query "your search description" --k 100
 
-# Developer alternatives:
-# Inspect reranked results (prints table)
-python src/retrieval/search_hybrid_rerank.py --index_dir ./artifacts \
-  --query "your search description" --topk 100
+# Export results to CSV
+python search.py --query "person walking" --output submissions/results.csv
 
-# Official submission naming (per-query files): write directly to submissions/{query_id}.csv
-python src/retrieval/use.py --query "your search" --query_id q123
+# Advanced search with different modes
+python search.py --query "outdoor scene" --search_mode vector --expand_query
 
-# VQA format (3 columns): video_id,frame_idx,answer
-python src/retrieval/use.py --query "question text" --task vqa --answer "màu xanh" --query_id q_vqa_01
-
-
-# Export baseline fusion (RRF) CSV explicitly (also supports --answer)
-python src/retrieval/export_csv.py --index_dir ./artifacts \
-  --query "search query" --outfile submissions/q123.csv
+# Batch submission generation (uses new architecture)
+python utils/make_submission.py queries.json --index_dir ./artifacts
 ```
 
 ## Official Submission & Evaluation

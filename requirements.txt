@@ -18,4 +18,10 @@ lightgbm==4.5.0 # optional; we use sklearn HGBT by default
 # For intelligent frame sampling
 decord>=0.6.0
 scipy>=1.11.0
+
+# NEW: Near-SOTA easy-to-implement alternatives
+ultralytics>=8.0.0  # FastSAM (50x faster than SAM2)
+easyocr>=1.7.0      # Best OCR for multilingual support
+transformers>=4.30.0  # BLIP-2 image captioning
+accelerate>=0.20.0    # For transformer models
 pyarrow>=14.0.0

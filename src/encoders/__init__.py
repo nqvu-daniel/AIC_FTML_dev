@@ -1,0 +1,1 @@
+"""Encoder Components (CLIP, OCR, SAM2, etc.)"""

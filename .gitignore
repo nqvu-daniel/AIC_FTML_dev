@@ -1,37 +1,89 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
 *.pyc
-.DS_Store
 
-# Artifacts and outputs
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Project artifacts and outputs
 artifacts/
+output/
+pipeline_output/
+test_artifacts/
+unified_output/
+keyframes/
+keyframes_intelligent/
+features/
+meta/
+
+# Data files
+data/
+videos/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+
+# Index and model files
 *.faiss
 *.index
 *.parquet
 *.joblib
 *.jsonl
+*.pth
+*.pt
+*.bin
+*.h5
+*.onnx
+*.pb
+
+# Logs and temporary files
 *.log
+*.tmp
+*.cache
 logs/
-submissions/
 temp/
-downloads/
+tmp/
+.tmp/
 _extracted_tmp/
 tmp_download/
-videos/
-keyframes/
-keyframes_intelligent/
-features/
-meta/
-my_pipeline/
+data/dataset_metadata/
 
 # Archives and bundles
 *.zip
 *.tar
 *.tar.gz
+*.rar
+*.7z
 artifacts_bundle*.tar.gz
 
-# Environments
+# Virtual environments
 .env
 .venv
+env/
+venv/
+ENV/
+
+# IDE and cache directories
+.vscode/
+.idea/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.ipynb_checkpoints/
+
+# Submissions and old directories
+submissions/
+downloads/
+my_pipeline/
+external/

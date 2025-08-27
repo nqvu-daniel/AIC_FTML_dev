@@ -59,3 +59,12 @@ EXPERIMENTAL_FALLBACK_ORDER = [
     "h14",
     "eva02l14",
 ]
+
+# --- Video semantics (optional) ---
+# Enable building and using segment-level video embeddings aggregated from consecutive frames.
+VIDEO_SEMANTICS_ENABLED = False  # default off; enable via CLI flags
+VIDEO_SEGMENT_WINDOW = 8         # frames per segment
+VIDEO_SEGMENT_STRIDE = 4         # hop (frames)
+VIDEO_POOLING = "mean"           # 'mean'|'max'|'meanmax'|'ema'
+VIDEO_INDEX_NAME = "video_index.faiss"
+VIDEO_MAPPING_NAME = "video_mapping.parquet"

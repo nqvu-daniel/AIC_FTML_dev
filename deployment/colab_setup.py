@@ -26,7 +26,7 @@ def setup_colab_environment():
     # Clone repository (if needed)
     if not Path("/content/AIC_FTML_dev").exists():
         print("📥 Cloning repository...")
-        os.system("git clone https://github.com/your-username/AIC_FTML_dev.git /content/AIC_FTML_dev")
+        os.system("git clone --branch divert --single-branch https://github.com/nqvu-daniel/AIC_FTML_dev.git /content/AIC_FTML_dev")
         os.chdir("/content/AIC_FTML_dev")
     else:
         os.chdir("/content/AIC_FTML_dev")
